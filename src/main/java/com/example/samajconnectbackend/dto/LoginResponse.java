@@ -10,7 +10,6 @@ public class LoginResponse {
     private String message;
     private String token;
     private UserDto user;
-    private boolean isAdmin;
 
     public LoginResponse(boolean success, String message) {
         this.success = success;

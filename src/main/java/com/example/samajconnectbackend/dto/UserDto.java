@@ -7,4 +7,8 @@ public class UserDto {
     private Long id;
     private String name;
     private String email;
+    private Boolean isAdmin;
+    private String profileImg;
+    private String phoneNumber;
+    private String address;
 }

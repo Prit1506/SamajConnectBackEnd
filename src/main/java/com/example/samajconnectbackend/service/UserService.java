@@ -62,7 +62,7 @@ public class UserService {
             userDto.setEmail(user.getEmail());
             userDto.setName(user.getName());
 
-            return new LoginResponse(true, "Login successful", token, userDto, user.isAdmin());
+            return new LoginResponse(true, "Login successful", token, userDto);
 
         } catch (Exception e) {
             logger.error("Authentication failed for email {}: {}", loginRequest.getEmail(), e.getMessage());
