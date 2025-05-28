@@ -47,6 +47,9 @@ public class User {
     @Column(name = "address")
     private String address;
 
+    @Column(name = "is_admin")
+    private boolean isAdmin;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

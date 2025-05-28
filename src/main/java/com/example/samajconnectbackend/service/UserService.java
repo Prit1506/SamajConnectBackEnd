@@ -62,7 +62,7 @@ public class UserService {
             userDto.setEmail(user.getEmail());
             userDto.setName(user.getName());
 
-            return new LoginResponse(true, "Login successful", token, userDto);
+            return new LoginResponse(true, "Login successful", token, userDto, user.isAdmin());
 
         } catch (Exception e) {
             logger.error("Authentication failed for email {}: {}", loginRequest.getEmail(), e.getMessage());
@@ -99,6 +99,8 @@ public class UserService {
             user.setOtpCode(otp);
             user.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
             user.setEmailVerified(false);
+
+            user.setAdmin(registerRequest.isAdmin());
 
             // Save the user
             User savedUser = userRepository.save(user);
