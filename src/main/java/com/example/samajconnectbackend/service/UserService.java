@@ -100,7 +100,7 @@ public class UserService {
             user.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
             user.setEmailVerified(false);
 
-            user.setAdmin(registerRequest.isAdmin());
+            user.setAdmin(registerRequest.getIsAdmin() != null ? registerRequest.getIsAdmin() : false);
 
             // Save the user
             User savedUser = userRepository.save(user);
