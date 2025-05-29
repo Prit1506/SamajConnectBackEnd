@@ -1,5 +1,6 @@
 package com.example.samajconnectbackend.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
@@ -15,6 +16,8 @@ public class CreateSamajRequest {
     private String name;
     private String description;
     private String rules;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd/MM/yyyy")
     private LocalDate establishedDate;
 
     // Admin user details
