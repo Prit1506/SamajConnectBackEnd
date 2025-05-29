@@ -13,9 +13,13 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(nullable = false)
+    private String name;
 
     @Column(unique = true, nullable = false)
     private String email;
@@ -23,11 +27,19 @@ public class User {
     @Column(nullable = false)
     private String password;
 
-    @Column(nullable = false)
-    private String name;
+    private String address;
+
+    @Column(name = "phone_number")
+    private String phoneNumber;
+
+    @Column(name = "profile_img")
+    private String profileImg;
+
+    @Column(name = "is_admin")
+    private Boolean isAdmin = false;
 
     @Column(name = "email_verified")
-    private boolean emailVerified = false;
+    private Boolean emailVerified = false;
 
     @Column(name = "otp_code")
     private String otpCode;
@@ -38,20 +50,17 @@ public class User {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "profile_img")
-    private String profileImg;
-
-    @Column(name = "phone_number")
-    private String phoneNumber;
-
-    @Column(name = "address")
-    private String address;
-
-    @Column(name = "is_admin")
-    private boolean isAdmin;
+    // Many users belong to one samaj
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "samaj_id", nullable = false)
+    private Samaj samaj;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified != null && emailVerified;
     }
 }

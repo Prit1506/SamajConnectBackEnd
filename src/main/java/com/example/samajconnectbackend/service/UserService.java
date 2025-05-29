@@ -1,7 +1,9 @@
 package com.example.samajconnectbackend.service;
 
 import com.example.samajconnectbackend.dto.*;
+import com.example.samajconnectbackend.entity.Samaj;
 import com.example.samajconnectbackend.entity.User;
+import com.example.samajconnectbackend.repository.SamajRepository;
 import com.example.samajconnectbackend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +37,8 @@ public class UserService {
     @Autowired
     private OtpService otpService;
 
+    @Autowired
+    private SamajRepository samajRepository;
     public LoginResponse authenticateUser(LoginRequest loginRequest) {
         System.out.println("Login Method called : " + LocalDateTime.now());
         try {
@@ -76,31 +80,47 @@ public class UserService {
      * User registration method
      */
     public RegisterResponse registerUser(RegisterRequest registerRequest) {
-
         System.out.println("Register Method called : " + LocalDateTime.now());
         String email = registerRequest.getEmail().trim();
 
         try {
-            // First do a check before attempting insert
+            // Check if email already exists
             boolean exists = emailExists(email);
             if (exists) {
                 logger.info("Registration failed: Email already exists: {}", email);
                 return new RegisterResponse(false, "Email already exists");
             }
 
-            // Create new user
             User user = new User();
             user.setEmail(email);
             user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
             user.setName(registerRequest.getName());
+            user.setEmailVerified(false);
 
             // Generate OTP for email verification
             String otp = otpService.generateOtp();
             user.setOtpCode(otp);
             user.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
-            user.setEmailVerified(false);
 
-            user.setAdmin(registerRequest.getIsAdmin() != null ? registerRequest.getIsAdmin() : false);
+            // Handle admin vs individual user registration
+            if (registerRequest.getIsAdmin() != null && registerRequest.getIsAdmin()) {
+                // Admin user creating samaj - this should be handled by SamajService.createSamajWithAdmin
+                return new RegisterResponse(false, "Admin registration should use samaj creation endpoint");
+            } else {
+                // Individual user joining existing samaj
+                if (registerRequest.getSamajId() == null) {
+                    return new RegisterResponse(false, "Samaj selection is required for individual users");
+                }
+
+                // Verify samaj exists
+                Optional<Samaj> samajOptional = samajRepository.findById(registerRequest.getSamajId());
+                if (samajOptional.isEmpty()) {
+                    return new RegisterResponse(false, "Selected samaj does not exist");
+                }
+
+                user.setIsAdmin(false);
+                user.setSamaj(samajOptional.get());
+            }
 
             // Save the user
             User savedUser = userRepository.save(user);
@@ -117,7 +137,6 @@ public class UserService {
             return new RegisterResponse(true, "Registration successful! Please check your email for verification code.");
 
         } catch (DataIntegrityViolationException e) {
-            // This will catch unique constraint violations
             logger.error("Registration failed due to data integrity violation: {}", e.getMessage());
             return new RegisterResponse(false, "Email already exists");
         } catch (Exception e) {
