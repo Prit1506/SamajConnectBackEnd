@@ -34,6 +34,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/samaj/all").permitAll()
                         .requestMatchers("/api/samaj/check/**").permitAll()
                         .requestMatchers("/api/samaj/create").permitAll()
+                        .requestMatchers("/api/events/samaj/**").permitAll()
+                        .requestMatchers("/api/events/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .build();
