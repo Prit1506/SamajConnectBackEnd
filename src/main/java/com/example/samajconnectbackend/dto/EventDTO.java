@@ -57,5 +57,14 @@ public class EventDTO {
     public void setSamajId(Long samajId) { this.samajId = samajId; }
 
     public String getImageBase64() { return imageBase64; }
-    public void setImageBase64(String imageBase64) { this.imageBase64 = imageBase64; }
+       // In EventDTO.java, enhance the conversion methods:
+   // For setting the image from base64 string
+   public void setImageBase64(String imageBase64) {
+       this.imageBase64 = imageBase64;
+   }
+   
+   // Helper method to convert base64 string to byte array for entity
+   public byte[] getImageBytes() {
+       return imageBase64 != null ? Base64.getDecoder().decode(imageBase64) : null;
+   }
 }

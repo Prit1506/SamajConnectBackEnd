@@ -19,6 +19,27 @@ public class SamajController {
     private SamajService samajService;
 
     /**
+     * Get samaj by ID
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<CreateSamajResponse> getSamajById(@PathVariable Long id) {
+        logger.info("Fetching samaj with ID: {}", id);
+
+        if (id == null || id <= 0) {
+            return ResponseEntity.badRequest()
+                    .body(new CreateSamajResponse(false, "Invalid samaj ID", null));
+        }
+
+        CreateSamajResponse response = samajService.getSamajById(id);
+
+        if (response.isSuccess()) {
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
      * Get all available samajs
      */
     @GetMapping("/all")

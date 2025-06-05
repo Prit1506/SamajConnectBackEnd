@@ -132,11 +132,36 @@ public class SamajService {
     }
 
     /**
-     * Get samaj by ID
+     * Get samaj by ID - returns CreateSamajResponse for consistency with frontend
      */
-    public Optional<Samaj> getSamajById(Long id) {
+    public CreateSamajResponse getSamajById(Long id) {
+        try {
+            Optional<Samaj> samajOptional = samajRepository.findById(id);
+
+            if (samajOptional.isPresent()) {
+                Samaj samaj = samajOptional.get();
+                SamajDto samajDto = convertToSamajDto(samaj);
+
+                logger.info("Samaj retrieved successfully: {}", samaj.getName());
+                return new CreateSamajResponse(true, "Samaj retrieved successfully", samajDto);
+            } else {
+                logger.warn("Samaj not found with ID: {}", id);
+                return new CreateSamajResponse(false, "Samaj not found", null);
+            }
+        } catch (Exception e) {
+            logger.error("Error retrieving samaj with ID {}: {}", id, e.getMessage());
+            return new CreateSamajResponse(false, "Failed to retrieve samaj: " + e.getMessage(), null);
+        }
+    }
+
+    /**
+     * Get samaj by ID - original method (keeping for backward compatibility)
+     */
+    public Optional<Samaj> getSamajEntityById(Long id) {
         return samajRepository.findById(id);
     }
+
+
 
     /**
      * Convert Samaj entity to DTO

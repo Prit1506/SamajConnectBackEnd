@@ -38,8 +38,9 @@ public class Event {
     @Column(name = "samaj_id")
     private Long samajId;
 
-    @Lob
-    @Column(name = "img_data", columnDefinition = "BYTEA")
+
+    // For the img_data field in Event.java
+    @Column(name = "img_data")
     private byte[] imgData;
 
 

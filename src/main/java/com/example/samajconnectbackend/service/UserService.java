@@ -74,6 +74,44 @@ public class UserService {
         }
     }
 
+    @Transactional
+    public UserDetailsResponse getUserById(Long userId) {
+        try {
+            Optional<User> userOptional = userRepository.findById(userId);
+
+            if (userOptional.isEmpty()) {
+                return new UserDetailsResponse(false, "User not found", null);
+            }
+
+            User user = userOptional.get();
+
+            // Create UserWithSamajDto
+            UserWithSamajDto userDto = new UserWithSamajDto();
+            userDto.setId(user.getId());
+            userDto.setName(user.getName());
+            userDto.setEmail(user.getEmail());
+            userDto.setIsAdmin(user.getIsAdmin());
+            userDto.setProfileImg(user.getProfileImg());
+            userDto.setPhoneNumber(user.getPhoneNumber());
+            userDto.setAddress(user.getAddress());
+
+            // Add samaj information
+            if (user.getSamaj() != null) {
+                SamajDto samajDto = new SamajDto();
+                samajDto.setId(user.getSamaj().getId());
+                samajDto.setName(user.getSamaj().getName());
+                samajDto.setDescription(user.getSamaj().getDescription());
+                userDto.setSamaj(samajDto);
+            }
+
+            return new UserDetailsResponse(true, "User details retrieved successfully", userDto);
+
+        } catch (Exception e) {
+            logger.error("Error getting user by ID {}: {}", userId, e.getMessage());
+            return new UserDetailsResponse(false, "Error retrieving user details: " + e.getMessage(), null);
+        }
+    }
+
     // Other methods stay the same
     
     /**

@@ -31,11 +31,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/resend-otp").permitAll()
                         .requestMatchers("/api/auth/forgot-password").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
-                        .requestMatchers("/api/samaj/all").permitAll()
+                        .requestMatchers("/api/samaj/**").permitAll()
                         .requestMatchers("/api/samaj/check/**").permitAll()
                         .requestMatchers("/api/samaj/create").permitAll()
                         .requestMatchers("/api/events/samaj/**").permitAll()
                         .requestMatchers("/api/events/**").permitAll()
+                        .requestMatchers("/api/users/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .build();
