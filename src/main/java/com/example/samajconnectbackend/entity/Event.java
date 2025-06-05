@@ -1,4 +1,3 @@
-// Event Entity
 package com.example.samajconnectbackend.entity;
 
 import jakarta.persistence.*;
@@ -15,13 +14,16 @@ public class Event {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "event_title")
+    @Column(name = "event_title", nullable = false)
     private String eventTitle;
 
     @Column(name = "event_description", columnDefinition = "TEXT")
     private String eventDescription;
 
-    @Column(name = "event_date")
+    @Column(name = "location")
+    private String location; // Added location field
+
+    @Column(name = "event_date", nullable = false)
     private LocalDateTime eventDate;
 
     @CreationTimestamp
@@ -32,25 +34,23 @@ public class Event {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @Column(name = "created_by")
+    @Column(name = "created_by", nullable = false)
     private Long createdBy;
 
-    @Column(name = "samaj_id")
+    @Column(name = "samaj_id", nullable = false)
     private Long samajId;
 
-
-    // For the img_data field in Event.java
     @Column(name = "img_data")
     private byte[] imgData;
-
 
     // Constructors
     public Event() {}
 
-    public Event(String eventTitle, String eventDescription, LocalDateTime eventDate,
-                 Long createdBy, Long samajId, byte[] imgData) {
+    public Event(String eventTitle, String eventDescription, String location,
+                 LocalDateTime eventDate, Long createdBy, Long samajId, byte[] imgData) {
         this.eventTitle = eventTitle;
         this.eventDescription = eventDescription;
+        this.location = location;
         this.eventDate = eventDate;
         this.createdBy = createdBy;
         this.samajId = samajId;
@@ -66,6 +66,9 @@ public class Event {
 
     public String getEventDescription() { return eventDescription; }
     public void setEventDescription(String eventDescription) { this.eventDescription = eventDescription; }
+
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
 
     public LocalDateTime getEventDate() { return eventDate; }
     public void setEventDate(LocalDateTime eventDate) { this.eventDate = eventDate; }

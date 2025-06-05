@@ -7,6 +7,7 @@ public class EventDTO {
     private Long id;
     private String eventTitle;
     private String eventDescription;
+    private String location; // Added location field
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime eventDate;
@@ -21,12 +22,13 @@ public class EventDTO {
     // Constructors
     public EventDTO() {}
 
-    public EventDTO(Long id, String eventTitle, String eventDescription,
+    public EventDTO(Long id, String eventTitle, String eventDescription, String location,
                     LocalDateTime eventDate, LocalDateTime createdAt,
                     Long createdBy, Long samajId, byte[] imgData) {
         this.id = id;
         this.eventTitle = eventTitle;
         this.eventDescription = eventDescription;
+        this.location = location;
         this.eventDate = eventDate;
         this.createdAt = createdAt;
         this.createdBy = createdBy;
@@ -44,6 +46,9 @@ public class EventDTO {
     public String getEventDescription() { return eventDescription; }
     public void setEventDescription(String eventDescription) { this.eventDescription = eventDescription; }
 
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
+
     public LocalDateTime getEventDate() { return eventDate; }
     public void setEventDate(LocalDateTime eventDate) { this.eventDate = eventDate; }
 
@@ -57,14 +62,10 @@ public class EventDTO {
     public void setSamajId(Long samajId) { this.samajId = samajId; }
 
     public String getImageBase64() { return imageBase64; }
-       // In EventDTO.java, enhance the conversion methods:
-   // For setting the image from base64 string
-   public void setImageBase64(String imageBase64) {
-       this.imageBase64 = imageBase64;
-   }
-   
-   // Helper method to convert base64 string to byte array for entity
-   public byte[] getImageBytes() {
-       return imageBase64 != null ? Base64.getDecoder().decode(imageBase64) : null;
-   }
+    public void setImageBase64(String imageBase64) { this.imageBase64 = imageBase64; }
+
+    // Helper method to convert base64 string to byte array for entity
+    public byte[] getImageBytes() {
+        return imageBase64 != null ? Base64.getDecoder().decode(imageBase64) : null;
+    }
 }
