@@ -43,8 +43,42 @@ public class Event {
     @Column(name = "img_data")
     private byte[] imgData;
 
+    @Column(name = "like_count")
+    private Integer likeCount = 0;
+
+    @Column(name = "dislike_count")
+    private Integer dislikeCount = 0;
+
+    // Transient field for current user's reaction
+    @Transient
+    private ReactionType currentUserReaction;
+
     // Constructors
     public Event() {}
+
+    public Integer getLikeCount() {
+        return likeCount;
+    }
+
+    public void setLikeCount(Integer likeCount) {
+        this.likeCount = likeCount;
+    }
+
+    public Integer getDislikeCount() {
+        return dislikeCount;
+    }
+
+    public void setDislikeCount(Integer dislikeCount) {
+        this.dislikeCount = dislikeCount;
+    }
+
+    public ReactionType getCurrentUserReaction() {
+        return currentUserReaction;
+    }
+
+    public void setCurrentUserReaction(ReactionType currentUserReaction) {
+        this.currentUserReaction = currentUserReaction;
+    }
 
     public Event(String eventTitle, String eventDescription, String location,
                  LocalDateTime eventDate, Long createdBy, Long samajId, byte[] imgData) {

@@ -37,6 +37,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/events/samaj/**").permitAll()
                         .requestMatchers("/api/events/**").permitAll()
                         .requestMatchers("/api/users/**").permitAll()
+                        .requestMatchers("/api/events/{eventId}/reactions/stats").permitAll()
+                        .requestMatchers("/api/events/{eventId}/reactions").permitAll()
+                        .requestMatchers("/api/events/{eventId}/reactions/my-reaction").permitAll()
                         .anyRequest().authenticated()
                 )
                 .build();
