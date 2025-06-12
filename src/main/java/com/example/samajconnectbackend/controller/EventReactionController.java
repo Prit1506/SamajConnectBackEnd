@@ -3,6 +3,7 @@ package com.example.samajconnectbackend.controller;
 import com.example.samajconnectbackend.dto.ApiResponse;
 import com.example.samajconnectbackend.dto.ReactionRequest;
 import com.example.samajconnectbackend.dto.ReactionStats;
+import com.example.samajconnectbackend.dto.UserIdRequest;
 import com.example.samajconnectbackend.entity.EventReaction;
 import com.example.samajconnectbackend.entity.User;
 import com.example.samajconnectbackend.service.EventReactionService;
@@ -44,11 +45,11 @@ public class EventReactionController {
     @DeleteMapping
     public ResponseEntity<ApiResponse> removeReaction(
             @PathVariable Long eventId,
-            @RequestBody Long userId) {
+            @RequestBody UserIdRequest userId) {
 
 
         try {
-            eventReactionService.removeReaction(userId, eventId);
+            eventReactionService.removeReaction(userId.getUserId(), eventId);
             return ResponseEntity.ok(new ApiResponse(true, "Reaction removed successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
@@ -59,9 +60,9 @@ public class EventReactionController {
     @PostMapping("/stats")
     public ResponseEntity<ApiResponse> getReactionStats(
             @PathVariable Long eventId,
-            @RequestBody Long userId) {
+            @RequestBody UserIdRequest userId) {
         try {
-            ReactionStats stats = eventReactionService.getReactionStatsWithUserReaction(eventId, userId);
+            ReactionStats stats = eventReactionService.getReactionStatsWithUserReaction(eventId, userId.getUserId());
             return ResponseEntity.ok(new ApiResponse(true, "Stats retrieved successfully", stats));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
@@ -72,10 +73,10 @@ public class EventReactionController {
     @PostMapping("/my-reaction")
     public ResponseEntity<ApiResponse> getMyReaction(
             @PathVariable Long eventId,
-            @RequestBody Long userId) {
+            @RequestBody UserIdRequest userId) {
 
         try {
-            var userReaction = eventReactionService.getUserReaction(userId, eventId);
+            var userReaction = eventReactionService.getUserReaction(userId.getUserId(), eventId);
             return ResponseEntity.ok(new ApiResponse(true, "User reaction retrieved", userReaction.orElse(null)));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
