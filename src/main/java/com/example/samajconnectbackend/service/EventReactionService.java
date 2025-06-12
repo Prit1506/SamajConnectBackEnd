@@ -21,42 +21,29 @@ public class EventReactionService {
     private EventRepository eventRepository;
 
     @Transactional
-    public EventReaction addOrUpdateReaction(Long userId, Long eventId, ReactionType reactionType) {
-        // Check if user already reacted to this event
-        Optional<EventReaction> existingReaction =
-                eventReactionRepository.findByUserIdAndEventId(userId, eventId);
+    public EventReaction addOrUpdateReaction(Long userId, Long eventId, String reactionTypeStr) {
+        ReactionType reactionType = ReactionType.valueOf(reactionTypeStr.toUpperCase());
 
-        EventReaction reaction;
-        ReactionType oldReactionType = null;
+        Optional<EventReaction> existingReaction = eventReactionRepository
+                .findByUserIdAndEventId(userId, eventId);
 
         if (existingReaction.isPresent()) {
-            reaction = existingReaction.get();
-            oldReactionType = reaction.getReactionType();
+            EventReaction reaction = existingReaction.get();
 
-            if (oldReactionType == reactionType) {
+            if (reaction.getReactionType() == reactionType) {
                 // Same reaction - remove it (toggle off)
                 eventReactionRepository.delete(reaction);
-                updateEventCounts(eventId, null, oldReactionType);
-                return null; // Return null to indicate reaction was removed
+                return null; // Indicates reaction was removed
             } else {
                 // Different reaction - update it
                 reaction.setReactionType(reactionType);
+                return eventReactionRepository.save(reaction);
             }
         } else {
-            // New reaction
-            reaction = new EventReaction();
-            reaction.setUserId(userId);
-            reaction.setEventId(eventId);
-            reaction.setReactionType(reactionType);
+            // No existing reaction - create new one
+            EventReaction newReaction = new EventReaction(userId, eventId, reactionType);
+            return eventReactionRepository.save(newReaction);
         }
-
-        // Save the reaction
-        reaction = eventReactionRepository.save(reaction);
-
-        // Update event counts
-        updateEventCounts(eventId, reactionType, oldReactionType);
-
-        return reaction;
     }
 
     @Transactional
@@ -100,13 +87,21 @@ public class EventReactionService {
     }
 
     public ReactionStats getReactionStatsWithUserReaction(Long eventId, Long userId) {
+        // Get total counts
         long likeCount = eventReactionRepository.countByEventIdAndReactionType(eventId, ReactionType.LIKE);
         long dislikeCount = eventReactionRepository.countByEventIdAndReactionType(eventId, ReactionType.DISLIKE);
 
-        Optional<ReactionType> userReaction =
-                eventReactionRepository.findReactionTypeByUserIdAndEventId(userId, eventId);
+        // Get user's specific reaction (if any)
+        EventReaction userReaction = null;
+        if (userId != null) {
+            Optional<EventReaction> userReactionOpt = eventReactionRepository
+                    .findByUserIdAndEventId(userId, eventId);
+            if (userReactionOpt.isPresent()) {
+                userReaction = userReactionOpt.get();
+            }
+        }
 
-        return new ReactionStats(eventId, likeCount, dislikeCount, userReaction.orElse(null));
+        return new ReactionStats(likeCount, dislikeCount, userReaction);
     }
 
     public Optional<ReactionType> getUserReaction(Long userId, Long eventId) {

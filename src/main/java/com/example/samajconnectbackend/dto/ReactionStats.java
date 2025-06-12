@@ -1,45 +1,42 @@
 package com.example.samajconnectbackend.dto;
 
-import com.example.samajconnectbackend.entity.ReactionType;
+import com.example.samajconnectbackend.entity.EventReaction;
 
 public class ReactionStats {
-    private Long eventId;
     private long likeCount;
     private long dislikeCount;
-    private long totalCount;
-    private ReactionType currentUserReaction;
+    private long totalReactions;
+    private EventReaction userReaction; // The user's specific reaction
+    private double likePercentage;
+    private double dislikePercentage;
 
+    // Constructors
     public ReactionStats() {}
 
     public ReactionStats(long likeCount, long dislikeCount) {
         this.likeCount = likeCount;
         this.dislikeCount = dislikeCount;
-        this.totalCount = likeCount + dislikeCount;
+        this.totalReactions = likeCount + dislikeCount;
+        this.userReaction = null;
+        calculatePercentages();
     }
 
-    public ReactionStats(Long eventId, long likeCount, long dislikeCount, ReactionType currentUserReaction) {
-        this.eventId = eventId;
+    public ReactionStats(long likeCount, long dislikeCount, EventReaction userReaction) {
         this.likeCount = likeCount;
         this.dislikeCount = dislikeCount;
-        this.totalCount = likeCount + dislikeCount;
-        this.currentUserReaction = currentUserReaction;
+        this.totalReactions = likeCount + dislikeCount;
+        this.userReaction = userReaction;
+        calculatePercentages();
     }
 
-    // Getters and setters
-    public Long getEventId() {
-        return eventId;
-    }
-
-    public void setEventId(Long eventId) {
-        this.eventId = eventId;
-    }
-
+    // Getters and Setters
     public long getLikeCount() {
         return likeCount;
     }
 
     public void setLikeCount(long likeCount) {
         this.likeCount = likeCount;
+        recalculate();
     }
 
     public long getDislikeCount() {
@@ -48,35 +45,76 @@ public class ReactionStats {
 
     public void setDislikeCount(long dislikeCount) {
         this.dislikeCount = dislikeCount;
+        recalculate();
     }
 
-    public long getTotalCount() {
-        return totalCount;
+    public long getTotalReactions() {
+        return totalReactions;
     }
 
-    public void setTotalCount(long totalCount) {
-        this.totalCount = totalCount;
+    public EventReaction getUserReaction() {
+        return userReaction;
     }
 
-    public ReactionType getCurrentUserReaction() {
-        return currentUserReaction;
-    }
-
-    public void setCurrentUserReaction(ReactionType currentUserReaction) {
-        this.currentUserReaction = currentUserReaction;
+    public void setUserReaction(EventReaction userReaction) {
+        this.userReaction = userReaction;
     }
 
     public double getLikePercentage() {
-        if (totalCount == 0) return 0.0;
-        return (double) likeCount / totalCount * 100;
+        return likePercentage;
     }
 
     public double getDislikePercentage() {
-        if (totalCount == 0) return 0.0;
-        return (double) dislikeCount / totalCount * 100;
+        return dislikePercentage;
     }
 
-    public boolean isPositivelyReceived() {
-        return likeCount > dislikeCount;
+    private void recalculate() {
+        this.totalReactions = this.likeCount + this.dislikeCount;
+        calculatePercentages();
+    }
+
+    private void calculatePercentages() {
+        if (totalReactions > 0) {
+            likePercentage = (double) likeCount / totalReactions * 100;
+            dislikePercentage = (double) dislikeCount / totalReactions * 100;
+        } else {
+            likePercentage = 0;
+            dislikePercentage = 0;
+        }
+    }
+
+    // Utility methods
+    public boolean hasUserReacted() {
+        return userReaction != null;
+    }
+
+    public boolean hasUserLiked() {
+        return userReaction != null && userReaction.getReactionType().name().equals("LIKE");
+    }
+
+    public boolean hasUserDisliked() {
+        return userReaction != null && userReaction.getReactionType().name().equals("DISLIKE");
+    }
+
+    public String getReactionSummary() {
+        if (totalReactions == 0) {
+            return "No reactions yet";
+        } else if (totalReactions == 1) {
+            return "1 reaction";
+        } else {
+            return totalReactions + " reactions";
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "ReactionStats{" +
+                "likeCount=" + likeCount +
+                ", dislikeCount=" + dislikeCount +
+                ", totalReactions=" + totalReactions +
+                ", userReaction=" + (userReaction != null ? userReaction.getReactionType() : "null") +
+                ", likePercentage=" + likePercentage +
+                ", dislikePercentage=" + dislikePercentage +
+                '}';
     }
 }

@@ -29,7 +29,8 @@ public class EventReactionController {
 
         try {
             EventReaction reaction = eventReactionService.addOrUpdateReaction(
-                    request.getUserId(), eventId, request.getReactionType());
+                    request.getUserId(), eventId, request.getReactionType().getValue());
+            System.out.println(request.getUserId());
 
             if (reaction == null) {
                 return ResponseEntity.ok(new ApiResponse(true, "Reaction removed successfully"));
