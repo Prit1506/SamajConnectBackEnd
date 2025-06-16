@@ -14,7 +14,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     List<Event> findBySamajIdOrderByCreatedAtDesc(Long samajId);
 
-    @Query("SELECT e FROM Event e WHERE e.samajId = :samajId AND e.eventDate >= CURRENT_TIMESTAMP ORDER BY e.eventDate ASC")
+    @Query("SELECT e FROM Event e WHERE e.samajId = :samajId AND e.eventDate >= CURRENT_TIMESTAMP ORDER BY e.eventDate ASC LIMIT 3")
     List<Event> findUpcomingEventsBySamajId(@Param("samajId") Long samajId);
 
     @Query("SELECT e FROM Event e WHERE e.samajId = :samajId ORDER BY e.createdAt DESC")
