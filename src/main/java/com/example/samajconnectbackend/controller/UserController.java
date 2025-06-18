@@ -40,7 +40,7 @@ public class UserController {
     /**
      * Update user profile
      */
-    @PutMapping("/{userId}/profile")
+    @PostMapping("/{userId}/profile")
     public ResponseEntity<UpdateUserProfileResponse> updateUserProfile(
             @PathVariable Long userId,
             @RequestBody UpdateUserProfileRequest request) {
@@ -56,11 +56,7 @@ public class UserController {
 
             UpdateUserProfileResponse response = userService.updateUserProfile(userId, request);
 
-            if (response.isSuccess()) {
-                return ResponseEntity.ok(response);
-            } else {
-                return ResponseEntity.badRequest().body(response);
-            }
+            return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
             logger.error("Validation error in updateUserProfile for user ID {}: {}", userId, e.getMessage());

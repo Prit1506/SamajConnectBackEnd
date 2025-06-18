@@ -292,6 +292,7 @@ public class UserService {
             if (userOptional.isEmpty()) {
                 return new UpdateUserProfileResponse(false, "User not found");
             }
+            System.out.println(userOptional.get());
             User existingUser = userOptional.get();
 
             // Update fields if provided (similar to EventService approach)
@@ -326,6 +327,7 @@ public class UserService {
 
             // Convert to DTO and return
             UserWithSamajDto userDto = convertToUserWithSamajDto(updatedUser);
+            System.out.println(userDto.toString());
 
             return new UpdateUserProfileResponse(true, "Profile updated successfully", userDto);
         } catch (Exception e) {

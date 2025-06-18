@@ -1,5 +1,6 @@
 package com.example.samajconnectbackend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -59,6 +60,7 @@ public class User {
     // Many users belong to one samaj
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "samaj_id", nullable = false)
+    @JsonIgnore
     private Samaj samaj;
 
     @PrePersist

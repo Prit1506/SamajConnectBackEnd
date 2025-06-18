@@ -1,6 +1,7 @@
 package com.example.samajconnectbackend.dto;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Base64;
 
 public class UserWithSamajDto {
@@ -121,5 +122,21 @@ public class UserWithSamajDto {
             return Base64.getEncoder().encodeToString(profileImg);
         }
         return null;
+    }
+
+    @Override
+    public String toString() {
+        return "UserWithSamajDto{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", email='" + email + '\'' +
+                ", isAdmin=" + isAdmin +
+                ", profileImg=" + Arrays.toString(profileImg) +
+                ", phoneNumber='" + phoneNumber + '\'' +
+                ", address='" + address + '\'' +
+                ", createdAt=" + createdAt +
+                ", updatedAt=" + updatedAt +
+                ", samaj=" + samaj +
+                '}';
     }
 }

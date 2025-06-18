@@ -52,6 +52,16 @@ public class UpdateUserProfileRequest {
         this.imageBase64 = imageBase64;
     }
 
+    @Override
+    public String toString() {
+        return "UpdateUserProfileRequest{" +
+                "name='" + name + '\'' +
+                ", phoneNumber='" + phoneNumber + '\'' +
+                ", address='" + address + '\'' +
+                ", imageBase64='" + imageBase64 + '\'' +
+                '}';
+    }
+
     // Helper method to convert base64 to bytes (similar to EventDTO)
     public byte[] getImageBytes() {
         if (imageBase64 != null && !imageBase64.isEmpty()) {
