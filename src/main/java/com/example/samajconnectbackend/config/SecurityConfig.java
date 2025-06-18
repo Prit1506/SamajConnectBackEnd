@@ -40,6 +40,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/events/{eventId}/reactions/stats").permitAll()
                         .requestMatchers("/api/events/{eventId}/reactions").permitAll()
                         .requestMatchers("/api/events/{eventId}/reactions/my-reaction").permitAll()
+                        .requestMatchers("/api/users/{userId}").permitAll()
+                        .requestMatchers("/api/users/{userId}/profile").permitAll()
                         .anyRequest().authenticated()
                 )
                 .build();
