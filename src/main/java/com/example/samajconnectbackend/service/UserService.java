@@ -39,6 +39,7 @@ public class UserService {
 
     @Autowired
     private SamajRepository samajRepository;
+
     public LoginResponse authenticateUser(LoginRequest loginRequest) {
         System.out.println("Login Method called : " + LocalDateTime.now());
         try {
@@ -74,46 +75,25 @@ public class UserService {
         }
     }
 
+    /**
+     * Updated getUserById method to use the new conversion method
+     */
     @Transactional
     public UserDetailsResponse getUserById(Long userId) {
         try {
             Optional<User> userOptional = userRepository.findById(userId);
-
             if (userOptional.isEmpty()) {
                 return new UserDetailsResponse(false, "User not found", null);
             }
-
             User user = userOptional.get();
-
-            // Create UserWithSamajDto
-            UserWithSamajDto userDto = new UserWithSamajDto();
-            userDto.setId(user.getId());
-            userDto.setName(user.getName());
-            userDto.setEmail(user.getEmail());
-            userDto.setIsAdmin(user.getIsAdmin());
-            userDto.setProfileImg(user.getProfileImg());
-            userDto.setPhoneNumber(user.getPhoneNumber());
-            userDto.setAddress(user.getAddress());
-
-            // Add samaj information
-            if (user.getSamaj() != null) {
-                SamajDto samajDto = new SamajDto();
-                samajDto.setId(user.getSamaj().getId());
-                samajDto.setName(user.getSamaj().getName());
-                samajDto.setDescription(user.getSamaj().getDescription());
-                userDto.setSamaj(samajDto);
-            }
-
+            UserWithSamajDto userDto = convertToUserWithSamajDto(user);
             return new UserDetailsResponse(true, "User details retrieved successfully", userDto);
-
         } catch (Exception e) {
             logger.error("Error getting user by ID {}: {}", userId, e.getMessage());
             return new UserDetailsResponse(false, "Error retrieving user details: " + e.getMessage(), null);
         }
     }
 
-    // Other methods stay the same
-    
     /**
      * User registration method
      */
@@ -183,7 +163,6 @@ public class UserService {
         }
     }
 
-
     /**
      * Email verification method
      */
@@ -220,14 +199,13 @@ public class UserService {
             return new VerifyEmailResponse(false, "Verification failed: " + e.getMessage());
         }
     }
-    
+
     /**
      * Method to check if email exists
      */
     public boolean emailExists(String email) {
         return userRepository.findByEmail(email).isPresent();
     }
-
 
     public ResendOtpResponse resendOtp(String email) {
         try {
@@ -304,4 +282,82 @@ public class UserService {
         return "Password reset successfully";
     }
 
+    /**
+     * Update user profile
+     */
+    @Transactional
+    public UpdateUserProfileResponse updateUserProfile(Long userId, UpdateUserProfileRequest request) {
+        try {
+            Optional<User> userOptional = userRepository.findById(userId);
+            if (userOptional.isEmpty()) {
+                return new UpdateUserProfileResponse(false, "User not found");
+            }
+            User existingUser = userOptional.get();
+
+            // Update fields if provided (similar to EventService approach)
+            if (request.getName() != null && !request.getName().trim().isEmpty()) {
+                existingUser.setName(request.getName().trim());
+            }
+
+            if (request.getPhoneNumber() != null) {
+                existingUser.setPhoneNumber(request.getPhoneNumber().trim());
+            }
+
+            if (request.getAddress() != null) {
+                existingUser.setAddress(request.getAddress().trim());
+            }
+
+            // Handle profile image update (similar to event image handling)
+            if (request.getImageBase64() != null) {
+                if (request.getImageBase64().isEmpty()) {
+                    existingUser.setProfileImg(null); // Remove image
+                } else {
+                    try {
+                        existingUser.setProfileImg(request.getImageBytes()); // Update image
+                    } catch (RuntimeException e) {
+                        return new UpdateUserProfileResponse(false, "Invalid image format: " + e.getMessage());
+                    }
+                }
+            }
+
+            // Save the updated user
+            User updatedUser = userRepository.save(existingUser);
+            logger.info("User profile updated successfully for user ID: {}", userId);
+
+            // Convert to DTO and return
+            UserWithSamajDto userDto = convertToUserWithSamajDto(updatedUser);
+
+            return new UpdateUserProfileResponse(true, "Profile updated successfully", userDto);
+        } catch (Exception e) {
+            logger.error("Error updating user profile for user ID {}: {}", userId, e.getMessage());
+            return new UpdateUserProfileResponse(false, "Failed to update profile: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper method to convert User entity to UserWithSamajDto
+     */
+    private UserWithSamajDto convertToUserWithSamajDto(User user) {
+        UserWithSamajDto userDto = new UserWithSamajDto();
+        userDto.setId(user.getId());
+        userDto.setName(user.getName());
+        userDto.setEmail(user.getEmail());
+        userDto.setIsAdmin(user.getIsAdmin());
+        userDto.setProfileImg(user.getProfileImg());
+        userDto.setPhoneNumber(user.getPhoneNumber());
+        userDto.setAddress(user.getAddress());
+        userDto.setCreatedAt(user.getCreatedAt());
+        userDto.setUpdatedAt(user.getUpdatedAt());
+
+        // Add samaj information
+        if (user.getSamaj() != null) {
+            SamajDto samajDto = new SamajDto();
+            samajDto.setId(user.getSamaj().getId());
+            samajDto.setName(user.getSamaj().getName());
+            samajDto.setDescription(user.getSamaj().getDescription());
+            userDto.setSamaj(samajDto);
+        }
+
+        return userDto;
+    }
 }

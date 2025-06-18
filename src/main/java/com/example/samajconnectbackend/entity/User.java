@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
@@ -32,8 +33,9 @@ public class User {
     @Column(name = "phone_number")
     private String phoneNumber;
 
+    // Changed from String to byte[] to store image data
     @Column(name = "profile_img")
-    private String profileImg;
+    private byte[] profileImg;
 
     @Column(name = "is_admin")
     private Boolean isAdmin = false;
@@ -49,6 +51,10 @@ public class User {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
     // Many users belong to one samaj
     @ManyToOne(fetch = FetchType.LAZY)
