@@ -8,6 +8,8 @@ import lombok.AllArgsConstructor;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -62,7 +64,17 @@ public class User {
     @JoinColumn(name = "samaj_id", nullable = false)
     @JsonIgnore
     private Samaj samaj;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<UserRelationship> relationships = new ArrayList<>();
 
+    @OneToMany(mappedBy = "relatedUser", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<UserRelationship> relatedRelationships = new ArrayList<>();
+
+    @OneToMany(mappedBy = "requesterUser", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<RelationshipRequest> sentRequests = new ArrayList<>();
+
+    @OneToMany(mappedBy = "targetUser", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<RelationshipRequest> receivedRequests = new ArrayList<>();
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

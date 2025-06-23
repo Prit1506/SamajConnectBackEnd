@@ -42,6 +42,28 @@ public class SecurityConfig {
                         .requestMatchers("/api/events/{eventId}/reactions/my-reaction").permitAll()
                         .requestMatchers("/api/users/{userId}").permitAll()
                         .requestMatchers("/api/users/{userId}/profile").permitAll()
+                        .requestMatchers(
+                                "/api/family-tree/health",
+                                "/api/family-tree/relationship-types",
+                                "/api/family-tree/relationship-sides"
+                        ).permitAll()
+
+                        // Allow GET methods only for these endpoints
+                        .requestMatchers(
+                                "/api/family-tree/user/**",
+                                "/api/family-tree/requests/**",
+                                "/api/family-tree/generation/**",
+                                "/api/family-tree/side/**",
+                                "/api/family-tree/mutual/**"
+                        ).permitAll()
+
+                        // Allow POST/PUT/DELETE if desired or secure them
+                        .requestMatchers(
+                                "/api/family-tree/relationship",
+                                "/api/family-tree/search/**",
+                                "/api/family-tree/requests/respond"
+                        ).permitAll()
+
                         .anyRequest().authenticated()
                 )
                 .build();
