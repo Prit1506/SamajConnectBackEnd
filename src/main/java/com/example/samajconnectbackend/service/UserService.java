@@ -1,6 +1,7 @@
 package com.example.samajconnectbackend.service;
 
 import com.example.samajconnectbackend.dto.*;
+import com.example.samajconnectbackend.entity.Gender;
 import com.example.samajconnectbackend.entity.Samaj;
 import com.example.samajconnectbackend.entity.User;
 import com.example.samajconnectbackend.repository.SamajRepository;
@@ -64,6 +65,7 @@ public class UserService {
 
             UserDto userDto = new UserDto();
             userDto.setId(user.getId());
+            userDto.setGender(String.valueOf(user.getGender()));
             userDto.setEmail(user.getEmail());
             userDto.setName(user.getName());
 
@@ -100,7 +102,7 @@ public class UserService {
     public RegisterResponse registerUser(RegisterRequest registerRequest) {
         System.out.println("Register Method called : " + LocalDateTime.now());
         String email = registerRequest.getEmail().trim();
-
+        Gender userGender;
         try {
             // Check if email already exists
             boolean exists = emailExists(email);
@@ -108,12 +110,17 @@ public class UserService {
                 logger.info("Registration failed: Email already exists: {}", email);
                 return new RegisterResponse(false, "Email already exists");
             }
-
+            try {
+                userGender = Gender.valueOf(registerRequest.getGender().trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                return new RegisterResponse(false, "Invalid gender. Allowed values: MALE, FEMALE, OTHER");
+            }
             User user = new User();
             user.setEmail(email);
             user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
             user.setName(registerRequest.getName());
             user.setEmailVerified(false);
+            user.setGender(userGender);
 
             // Generate OTP for email verification
             String otp = otpService.generateOtp();
@@ -269,7 +276,6 @@ public class UserService {
         }
 
         User user = userOptional.get();
-
         if (!otpService.isOtpValid(request.getOtp(), user.getOtpCode(), user.getOtpExpiry())) {
             return "Invalid or expired OTP";
         }
@@ -344,6 +350,7 @@ public class UserService {
         userDto.setId(user.getId());
         userDto.setName(user.getName());
         userDto.setEmail(user.getEmail());
+        userDto.setGender(String.valueOf(user.getGender()));
         userDto.setIsAdmin(user.getIsAdmin());
         userDto.setProfileImg(user.getProfileImg());
         userDto.setPhoneNumber(user.getPhoneNumber());

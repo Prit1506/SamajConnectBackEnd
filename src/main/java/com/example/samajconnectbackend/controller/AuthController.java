@@ -5,6 +5,7 @@ import com.example.samajconnectbackend.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,11 +34,14 @@ public class AuthController {
         if (registerRequest.getEmail() == null || registerRequest.getEmail().isBlank()) {
             return ResponseEntity.badRequest().body(new RegisterResponse(false, "Email cannot be empty"));
         }
+        RegisterResponse response = userService.registerUser(registerRequest);
+        if (response == null) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new RegisterResponse(false, "Internal server error: No response from service"));
+        }
+
         // Log the incoming request
         logger.info("Received registration request for email: {}", registerRequest.getEmail());
-        
-        // Call the service
-        RegisterResponse response = userService.registerUser(registerRequest);
         
         // Log the response
         logger.info("Registration response: success={}, message={}", 

@@ -1,9 +1,13 @@
 package com.example.samajconnectbackend.dto;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Base64;
-
+@Getter
+@Setter
 public class UserWithSamajDto {
 
     private Long id;
@@ -12,6 +16,7 @@ public class UserWithSamajDto {
     private Boolean isAdmin;
     private byte[] profileImg;
     private String phoneNumber;
+    private String gender;
     private String address;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -32,87 +37,6 @@ public class UserWithSamajDto {
         this.address = address;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-        this.samaj = samaj;
-    }
-
-    // Getters and Setters
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public Boolean getIsAdmin() {
-        return isAdmin;
-    }
-
-    public void setIsAdmin(Boolean isAdmin) {
-        this.isAdmin = isAdmin;
-    }
-
-    public byte[] getProfileImg() {
-        return profileImg;
-    }
-
-    public void setProfileImg(byte[] profileImg) {
-        this.profileImg = profileImg;
-    }
-
-    public String getPhoneNumber() {
-        return phoneNumber;
-    }
-
-    public void setPhoneNumber(String phoneNumber) {
-        this.phoneNumber = phoneNumber;
-    }
-
-    public String getAddress() {
-        return address;
-    }
-
-    public void setAddress(String address) {
-        this.address = address;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    public SamajDto getSamaj() {
-        return samaj;
-    }
-
-    public void setSamaj(SamajDto samaj) {
         this.samaj = samaj;
     }
 
