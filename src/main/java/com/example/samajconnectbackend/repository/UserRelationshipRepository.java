@@ -94,4 +94,30 @@ public interface UserRelationshipRepository extends JpaRepository<UserRelationsh
             "WHERE ((ur.userId = :userId AND ur.relatedUserId = :relatedUserId) OR " +
             "(ur.userId = :relatedUserId AND ur.relatedUserId = :userId)) AND ur.isActive = true")
     void softDeleteRelationship(@Param("userId") Long userId, @Param("relatedUserId") Long relatedUserId);
+
+    boolean existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
+            Long userId,
+            Long relatedUserId,
+            RelationshipType relationshipType,
+            Boolean isActive
+    );
+
+    // Alternative method using @Query if the above doesn't work
+    @Query("SELECT COUNT(ur) > 0 FROM UserRelationship ur WHERE " +
+            "ur.userId = :userId AND ur.relatedUserId = :relatedUserId AND " +
+            "ur.relationshipType = :relationshipType AND ur.isActive = :isActive")
+    boolean checkRelationshipExists(
+            @Param("userId") Long userId,
+            @Param("relatedUserId") Long relatedUserId,
+            @Param("relationshipType") RelationshipType relationshipType,
+            @Param("isActive") Boolean isActive
+    );
+
+    // Find existing relationship for potential updates
+    Optional<UserRelationship> findByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
+            Long userId,
+            Long relatedUserId,
+            RelationshipType relationshipType,
+            Boolean isActive
+    );
 }

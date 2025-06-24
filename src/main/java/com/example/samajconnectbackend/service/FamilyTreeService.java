@@ -7,6 +7,7 @@ import com.example.samajconnectbackend.repository.UserRelationshipRepository;
 import com.example.samajconnectbackend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -62,58 +63,156 @@ public class FamilyTreeService {
         return response;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public ApiResponse<String> respondToRequest(RespondToRequestDto response) {
         try {
-            RelationshipRequest request = requestRepository.findById(response.getRequestId())
-                    .orElseThrow(() -> new RuntimeException("Request not found"));
+            log.info("Attempting to respond to request with ID: {}", response.getRequestId());
 
+            // Find the request
+            RelationshipRequest request = requestRepository.findById(response.getRequestId())
+                    .orElseThrow(() -> new IllegalArgumentException("Request not found with ID: " + response.getRequestId()));
+
+            log.info("Found request: ID={}, Status={}, TargetUserId={}, RequesterUserId={}",
+                    request.getId(), request.getStatus(), request.getTargetUserId(), request.getRequesterUserId());
+
+            // Validate the responding user
             if (!request.getTargetUserId().equals(response.getRespondingUserId())) {
+                log.warn("Unauthorized response attempt. Request TargetUserId={}, RespondingUserId={}",
+                        request.getTargetUserId(), response.getRespondingUserId());
                 return ApiResponse.error("Unauthorized to respond to this request");
             }
 
+            // Check if request is still pending
             if (request.getStatus() != RequestStatus.PENDING) {
+                log.warn("Request {} has already been responded to. Current status: {}",
+                        request.getId(), request.getStatus());
                 return ApiResponse.error("Request has already been responded to");
             }
 
+            // Validate the response status
+            if (response.getStatus() != RequestStatus.APPROVED && response.getStatus() != RequestStatus.REJECTED) {
+                log.error("Invalid response status: {}", response.getStatus());
+                return ApiResponse.error("Invalid response status");
+            }
+
+            // If approved, check for existing relationships before updating request status
+            if (response.getStatus() == RequestStatus.APPROVED) {
+                // Check if relationships already exist
+                if (checkRelationshipExists(request)) {
+                    log.warn("Relationship already exists between users {} and {} with type {}",
+                            request.getRequesterUserId(), request.getTargetUserId(), request.getRelationshipType());
+                    return ApiResponse.error("Relationship already exists between these users");
+                }
+            }
+
+            // Update the request
             request.setStatus(response.getStatus());
             request.setRespondedAt(LocalDateTime.now());
             request.setUpdatedAt(LocalDateTime.now());
-            requestRepository.save(request);
+
+            RelationshipRequest savedRequest = requestRepository.save(request);
+            log.info("Request {} updated successfully with status: {}", savedRequest.getId(), savedRequest.getStatus());
 
             // If approved, create the actual relationship
             if (response.getStatus() == RequestStatus.APPROVED) {
+                createRelationshipsIfNotExists(request, response.getRespondingUserId());
+            }
+
+            String message = response.getStatus() == RequestStatus.APPROVED ?
+                    "Request approved and relationship created" : "Request rejected";
+
+            log.info("Successfully processed request response: {}", message);
+            return ApiResponse.success(message);
+
+        } catch (DataIntegrityViolationException e) {
+            log.error("Data integrity violation - relationship may already exist", e);
+            return ApiResponse.error("Relationship already exists between these users");
+        } catch (Exception e) {
+            log.error("Error responding to request with ID: {}", response.getRequestId(), e);
+            return ApiResponse.error("Failed to respond to request: " + e.getMessage());
+        }
+    }
+
+    // Method to check if relationship already exists
+    private boolean checkRelationshipExists(RelationshipRequest request) {
+        // Check if requester -> target relationship exists
+        boolean requesterToTargetExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
+                request.getRequesterUserId(),
+                request.getTargetUserId(),
+                request.getRelationshipType(),
+                true);
+
+        // Check if target -> requester relationship exists (reverse)
+        RelationshipType reverseType = getReverse(request.getRelationshipType());
+        boolean targetToRequesterExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
+                request.getTargetUserId(),
+                request.getRequesterUserId(),
+                reverseType,
+                true);
+
+        return requesterToTargetExists || targetToRequesterExists;
+    }
+
+    // Method to create relationships with additional safety checks
+    private void createRelationshipsIfNotExists(RelationshipRequest request, Long respondingUserId) {
+        log.info("Creating relationships for approved request: {}", request.getId());
+
+        try {
+            // Create the target user's relationship (only if it doesn't exist)
+            RelationshipType reverseType = getReverse(request.getRelationshipType());
+
+            boolean targetRelationshipExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
+                    request.getTargetUserId(),
+                    request.getRequesterUserId(),
+                    reverseType,
+                    true);
+
+            if (!targetRelationshipExists) {
                 UserRelationship relationship = new UserRelationship();
                 relationship.setUserId(request.getTargetUserId());
                 relationship.setRelatedUserId(request.getRequesterUserId());
-                relationship.setRelationshipType(getReverse(request.getRelationshipType()));
+                relationship.setRelationshipType(reverseType);
                 relationship.setRelationshipSide(request.getRelationshipSide());
                 relationship.setGenerationLevel(-request.getGenerationLevel());
-                relationship.setCreatedBy(response.getRespondingUserId());
+                relationship.setCreatedBy(respondingUserId);
                 relationship.setIsActive(true);
+                relationship.setCreatedAt(LocalDateTime.now());
+                relationship.setUpdatedAt(LocalDateTime.now());
 
-                relationshipRepository.save(relationship);
+                UserRelationship savedRelationship = relationshipRepository.save(relationship);
+                log.info("Created relationship for target user: {}", savedRelationship.getId());
+            } else {
+                log.info("Target user relationship already exists, skipping creation");
+            }
 
-                // Create the requester's relationship
+            // Create the requester's relationship (only if it doesn't exist)
+            boolean requesterRelationshipExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
+                    request.getRequesterUserId(),
+                    request.getTargetUserId(),
+                    request.getRelationshipType(),
+                    true);
+
+            if (!requesterRelationshipExists) {
                 UserRelationship requesterRelationship = new UserRelationship();
                 requesterRelationship.setUserId(request.getRequesterUserId());
                 requesterRelationship.setRelatedUserId(request.getTargetUserId());
                 requesterRelationship.setRelationshipType(request.getRelationshipType());
                 requesterRelationship.setRelationshipSide(request.getRelationshipSide());
                 requesterRelationship.setGenerationLevel(request.getGenerationLevel());
-                requesterRelationship.setCreatedBy(response.getRespondingUserId());
+                requesterRelationship.setCreatedBy(respondingUserId);
                 requesterRelationship.setIsActive(true);
+                requesterRelationship.setCreatedAt(LocalDateTime.now());
+                requesterRelationship.setUpdatedAt(LocalDateTime.now());
 
-                relationshipRepository.save(requesterRelationship);
+                UserRelationship savedRequesterRelationship = relationshipRepository.save(requesterRelationship);
+                log.info("Created relationship for requester user: {}", savedRequesterRelationship.getId());
+            } else {
+                log.info("Requester relationship already exists, skipping creation");
             }
 
-            String message = response.getStatus() == RequestStatus.APPROVED ?
-                    "Request approved and relationship created" : "Request rejected";
-
-            return ApiResponse.success(message);
-
-        } catch (Exception e) {
-            log.error("Error responding to request", e);
-            return ApiResponse.error("Failed to respond to request: " + e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Relationship creation failed due to constraint violation - relationship may have been created by another process", e);
+            // Don't throw the exception as the request was already approved
         }
     }
 

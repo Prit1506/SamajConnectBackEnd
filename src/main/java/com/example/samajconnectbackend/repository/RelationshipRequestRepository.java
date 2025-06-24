@@ -13,6 +13,14 @@ import java.util.Optional;
 @Repository
 public interface RelationshipRequestRepository extends JpaRepository<RelationshipRequest, Long> {
 
+    // Explicit findById method (though JpaRepository already provides this)
+    @Query("SELECT rr FROM RelationshipRequest rr WHERE rr.id = :id")
+    Optional<RelationshipRequest> findRequestById(@Param("id") Long id);
+
+    // Find by ID with status check
+    @Query("SELECT rr FROM RelationshipRequest rr WHERE rr.id = :id AND rr.status = :status")
+    Optional<RelationshipRequest> findByIdAndStatus(@Param("id") Long id, @Param("status") RequestStatus status);
+
     // Find pending requests for a user (received)
     List<RelationshipRequest> findByTargetUserIdAndStatus(Long targetUserId, RequestStatus status);
 
@@ -48,4 +56,19 @@ public interface RelationshipRequestRepository extends JpaRepository<Relationshi
             @Param("userId") Long userId,
             @Param("status") RequestStatus status,
             @Param("fromDate") java.time.LocalDateTime fromDate);
+
+    // Additional helper methods for debugging
+    @Query("SELECT rr FROM RelationshipRequest rr WHERE rr.targetUserId = :userId ORDER BY rr.createdAt DESC")
+    List<RelationshipRequest> findAllByTargetUserId(@Param("userId") Long userId);
+
+    @Query("SELECT rr FROM RelationshipRequest rr WHERE rr.requesterUserId = :userId ORDER BY rr.createdAt DESC")
+    List<RelationshipRequest> findAllByRequesterUserId(@Param("userId") Long userId);
+
+    // Check if a request exists by ID and user
+    @Query("SELECT rr FROM RelationshipRequest rr WHERE rr.id = :requestId AND " +
+            "(rr.targetUserId = :userId OR rr.requesterUserId = :userId)")
+    Optional<RelationshipRequest> findByIdAndUserId(@Param("requestId") Long requestId, @Param("userId") Long userId);
+
+
+
 }
