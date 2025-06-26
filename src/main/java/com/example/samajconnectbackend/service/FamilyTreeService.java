@@ -163,8 +163,6 @@ public class FamilyTreeService {
      */
     public List<RelationshipRequestDto> getPendingRequests(Long userId) {
         List<RelationshipRequest> requests = requestRepository.findByTargetUserIdAndStatus(userId, RequestStatus.PENDING);
-
-
         return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
     }
 
@@ -1044,7 +1042,7 @@ public class FamilyTreeService {
         dto.setRequesterUserId(request.getRequesterUserId());
         dto.setTargetUserId(request.getTargetUserId());
         dto.setRelationshipType(request.getRelationshipType());
-        dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
+        dto.setRelationshipDisplayName(getReverseRelationshipType(request.getRelationshipType(), request.getRequesterUser(), request.getTargetUser()).getDisplayName());
         dto.setRelationshipSide(request.getRelationshipSide());
         dto.setRelationshipSideDisplayName(request.getRelationshipSide().getDisplayName());
         dto.setGenerationLevel(request.getGenerationLevel());
