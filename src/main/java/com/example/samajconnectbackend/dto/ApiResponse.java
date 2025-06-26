@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 @Data
 @AllArgsConstructor
 public class ApiResponse<T> {
+    // Getters and Setters
     private boolean success;
     private String message;
     private T data;
@@ -36,13 +37,4 @@ public class ApiResponse<T> {
     public static <T> ApiResponse<T> error(String message, String errorCode) {
         return new ApiResponse<>(false, message, null, errorCode, LocalDateTime.now());
     }
-    // Getters and Setters
-    public boolean isSuccess() { return success; }
-    public void setSuccess(boolean success) { this.success = success; }
-
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
-
-    public T getData() { return data; }
-    public void setData(T data) { this.data = data; }
 }

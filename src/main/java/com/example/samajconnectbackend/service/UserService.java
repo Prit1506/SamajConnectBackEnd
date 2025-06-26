@@ -1,7 +1,6 @@
 package com.example.samajconnectbackend.service;
 
 import com.example.samajconnectbackend.dto.*;
-import com.example.samajconnectbackend.entity.Gender;
 import com.example.samajconnectbackend.entity.Samaj;
 import com.example.samajconnectbackend.entity.User;
 import com.example.samajconnectbackend.repository.SamajRepository;
@@ -12,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -102,7 +100,7 @@ public class UserService {
     public RegisterResponse registerUser(RegisterRequest registerRequest) {
         System.out.println("Register Method called : " + LocalDateTime.now());
         String email = registerRequest.getEmail().trim();
-        Gender userGender;
+        String userGender;
         try {
             // Check if email already exists
             boolean exists = emailExists(email);
@@ -111,7 +109,7 @@ public class UserService {
                 return new RegisterResponse(false, "Email already exists");
             }
             try {
-                userGender = Gender.valueOf(registerRequest.getGender().trim().toUpperCase());
+                userGender = registerRequest.getGender().trim().toUpperCase();
             } catch (IllegalArgumentException e) {
                 return new RegisterResponse(false, "Invalid gender. Allowed values: MALE, FEMALE, OTHER");
             }

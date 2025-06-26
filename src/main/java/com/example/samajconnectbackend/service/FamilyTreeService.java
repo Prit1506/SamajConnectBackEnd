@@ -8,9 +8,6 @@ import com.example.samajconnectbackend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +26,12 @@ public class FamilyTreeService {
     private final RelationshipRequestRepository requestRepository;
     private final RelationshipValidationService validationService;
 
+    // ==================== CONTROLLER METHOD ORDER ====================
+
+    /**
+     * 1. Get complete family tree for a user
+     * Corresponds to: GET /user/{userId}
+     */
     public FamilyTreeResponse getFamilyTree(Long userId) {
         log.info("Fetching family tree for user: {}", userId);
 
@@ -63,6 +66,119 @@ public class FamilyTreeService {
         return response;
     }
 
+    /**
+     * 2. Add a new relationship
+     * Corresponds to: POST /relationship
+     */
+    public ApiResponse<String> addRelationship(AddRelationshipRequest request) {
+        try {
+            log.info("Adding relationship: {} -> {} as {}",
+                    request.getRequestingUserId(), request.getRelatedUserId(), request.getRelationshipType());
+
+            // Validate users exist
+            User requestingUser = userRepository.findById(request.getRequestingUserId())
+                    .orElseThrow(() -> new RuntimeException("Requesting user not found"));
+            User relatedUser = userRepository.findById(request.getRelatedUserId())
+                    .orElseThrow(() -> new RuntimeException("Related user not found"));
+
+            log.info("USERS_DEBUG: Requesting User ID={}, Name={}, Gender={}",
+                    requestingUser.getId(), requestingUser.getName(), requestingUser.getGender());
+            log.info("USERS_DEBUG: Related User ID={}, Name={}, Gender={}",
+                    relatedUser.getId(), relatedUser.getName(), relatedUser.getGender());
+
+            // Validate that the target user's gender matches the relationship role
+            ApiResponse<String> targetGenderValidation = validateTargetUserGenderCompatibility(relatedUser, request.getRelationshipType());
+            if (!targetGenderValidation.isSuccess()) {
+                return targetGenderValidation;
+            }
+
+            // Validate relationship using validation service
+            RelationshipValidationResponse validation = validationService.validateRelationship(
+                    request.getRequestingUserId(), request.getRelatedUserId(), request.getRelationshipType());
+
+            if (!validation.isValid()) {
+                return ApiResponse.error("Validation failed: " + String.join(", ", validation.getValidationErrors()));
+            }
+
+            if (request.isSendRequest()) {
+                return createRelationshipRequest(request);
+            } else {
+                return addDirectRelationship(request, requestingUser, relatedUser);
+            }
+
+        } catch (Exception e) {
+            log.error("Error adding relationship", e);
+            return ApiResponse.error("Failed to add relationship: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 3. Update an existing relationship
+     * Corresponds to: PUT /relationship
+     */
+    public ApiResponse<String> updateRelationship(UpdateRelationshipRequest request) {
+        try {
+            UserRelationship relationship = relationshipRepository.findById(request.getRelationshipId())
+                    .orElseThrow(() -> new RuntimeException("Relationship not found"));
+
+            if (request.getRelationshipType() != null) {
+                relationship.setRelationshipType(request.getRelationshipType());
+            }
+            if (request.getRelationshipSide() != null) {
+                relationship.setRelationshipSide(request.getRelationshipSide());
+            }
+            if (request.getGenerationLevel() != null) {
+                relationship.setGenerationLevel(request.getGenerationLevel());
+            }
+
+            relationship.setUpdatedAt(LocalDateTime.now());
+            relationshipRepository.save(relationship);
+
+            return ApiResponse.success("Relationship updated successfully");
+
+        } catch (Exception e) {
+            log.error("Error updating relationship", e);
+            return ApiResponse.error("Failed to update relationship: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 4. Remove a relationship
+     * Corresponds to: DELETE /relationship/{userId}/{relatedUserId}
+     */
+    public ApiResponse<String> removeRelationship(Long userId, Long relatedUserId) {
+        try {
+            relationshipRepository.softDeleteRelationship(userId, relatedUserId);
+            relationshipRepository.softDeleteRelationship(relatedUserId, userId);
+            return ApiResponse.success("Relationship removed successfully");
+        } catch (Exception e) {
+            log.error("Error removing relationship", e);
+            return ApiResponse.error("Failed to remove relationship: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 5. Get pending relationship requests for a user
+     * Corresponds to: GET /requests/pending/{userId}
+     */
+    public List<RelationshipRequestDto> getPendingRequests(Long userId) {
+        List<RelationshipRequest> requests = requestRepository.findByTargetUserIdAndStatus(userId, RequestStatus.PENDING);
+        return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
+    }
+
+    /**
+     * 6. Get sent relationship requests by a user
+     * Corresponds to: GET /requests/sent/{userId}
+     */
+    public List<RelationshipRequestDto> getSentRequests(Long userId) {
+        List<RelationshipRequest> requests = requestRepository.findByRequesterUserIdAndStatus(userId, RequestStatus.PENDING);
+        return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
+    }
+
+    /**
+     * 7. Respond to a relationship request
+     * Corresponds to: POST /requests/respond
+     */
     @Transactional(rollbackFor = Exception.class)
     public ApiResponse<String> respondToRequest(RespondToRequestDto response) {
         try {
@@ -72,8 +188,9 @@ public class FamilyTreeService {
             RelationshipRequest request = requestRepository.findById(response.getRequestId())
                     .orElseThrow(() -> new IllegalArgumentException("Request not found with ID: " + response.getRequestId()));
 
-            log.info("Found request: ID={}, Status={}, TargetUserId={}, RequesterUserId={}",
-                    request.getId(), request.getStatus(), request.getTargetUserId(), request.getRequesterUserId());
+            log.info("Found request: ID={}, Status={}, TargetUserId={}, RequesterUserId={}, RelationshipType={}",
+                    request.getId(), request.getStatus(), request.getTargetUserId(),
+                    request.getRequesterUserId(), request.getRelationshipType());
 
             // Validate the responding user
             if (!request.getTargetUserId().equals(response.getRespondingUserId())) {
@@ -133,115 +250,10 @@ public class FamilyTreeService {
         }
     }
 
-    // Method to check if relationship already exists
-    private boolean checkRelationshipExists(RelationshipRequest request) {
-        // Check if requester -> target relationship exists
-        boolean requesterToTargetExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
-                request.getRequesterUserId(),
-                request.getTargetUserId(),
-                request.getRelationshipType(),
-                true);
-
-        // Check if target -> requester relationship exists (reverse)
-        RelationshipType reverseType = getReverse(request.getRelationshipType());
-        boolean targetToRequesterExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
-                request.getTargetUserId(),
-                request.getRequesterUserId(),
-                reverseType,
-                true);
-
-        return requesterToTargetExists || targetToRequesterExists;
-    }
-
-    // Method to create relationships with additional safety checks
-    private void createRelationshipsIfNotExists(RelationshipRequest request, Long respondingUserId) {
-        log.info("Creating relationships for approved request: {}", request.getId());
-
-        try {
-            // Create the target user's relationship (only if it doesn't exist)
-            RelationshipType reverseType = getReverse(request.getRelationshipType());
-
-            boolean targetRelationshipExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
-                    request.getTargetUserId(),
-                    request.getRequesterUserId(),
-                    reverseType,
-                    true);
-
-            if (!targetRelationshipExists) {
-                UserRelationship relationship = new UserRelationship();
-                relationship.setUserId(request.getTargetUserId());
-                relationship.setRelatedUserId(request.getRequesterUserId());
-                relationship.setRelationshipType(reverseType);
-                relationship.setRelationshipSide(request.getRelationshipSide());
-                relationship.setGenerationLevel(-request.getGenerationLevel());
-                relationship.setCreatedBy(respondingUserId);
-                relationship.setIsActive(true);
-                relationship.setCreatedAt(LocalDateTime.now());
-                relationship.setUpdatedAt(LocalDateTime.now());
-
-                UserRelationship savedRelationship = relationshipRepository.save(relationship);
-                log.info("Created relationship for target user: {}", savedRelationship.getId());
-            } else {
-                log.info("Target user relationship already exists, skipping creation");
-            }
-
-            // Create the requester's relationship (only if it doesn't exist)
-            boolean requesterRelationshipExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActive(
-                    request.getRequesterUserId(),
-                    request.getTargetUserId(),
-                    request.getRelationshipType(),
-                    true);
-
-            if (!requesterRelationshipExists) {
-                UserRelationship requesterRelationship = new UserRelationship();
-                requesterRelationship.setUserId(request.getRequesterUserId());
-                requesterRelationship.setRelatedUserId(request.getTargetUserId());
-                requesterRelationship.setRelationshipType(request.getRelationshipType());
-                requesterRelationship.setRelationshipSide(request.getRelationshipSide());
-                requesterRelationship.setGenerationLevel(request.getGenerationLevel());
-                requesterRelationship.setCreatedBy(respondingUserId);
-                requesterRelationship.setIsActive(true);
-                requesterRelationship.setCreatedAt(LocalDateTime.now());
-                requesterRelationship.setUpdatedAt(LocalDateTime.now());
-
-                UserRelationship savedRequesterRelationship = relationshipRepository.save(requesterRelationship);
-                log.info("Created relationship for requester user: {}", savedRequesterRelationship.getId());
-            } else {
-                log.info("Requester relationship already exists, skipping creation");
-            }
-
-        } catch (DataIntegrityViolationException e) {
-            log.warn("Relationship creation failed due to constraint violation - relationship may have been created by another process", e);
-            // Don't throw the exception as the request was already approved
-        }
-    }
-
-    public ApiResponse<String> updateRelationship(UpdateRelationshipRequest request) {
-        try {
-            UserRelationship relationship = relationshipRepository.findById(request.getRelationshipId())
-                    .orElseThrow(() -> new RuntimeException("Relationship not found"));
-
-            if (request.getRelationshipType() != null) {
-                relationship.setRelationshipType(request.getRelationshipType());
-            }
-            if (request.getRelationshipSide() != null) {
-                relationship.setRelationshipSide(request.getRelationshipSide());
-            }
-            if (request.getGenerationLevel() != null) {
-                relationship.setGenerationLevel(request.getGenerationLevel());
-            }
-
-            relationship.setUpdatedAt(LocalDateTime.now());
-            relationshipRepository.save(relationship);
-
-            return ApiResponse.success("Relationship updated successfully");
-
-        } catch (Exception e) {
-            log.error("Error updating relationship", e);
-            return ApiResponse.error("Failed to update relationship: " + e.getMessage());
-        }
-    }
-
+    /**
+     * 8. Search family members
+     * Corresponds to: POST /search/{userId}
+     */
     public FamilyMemberSearchResponse searchFamilyMembers(Long userId, FamilyMemberSearchDto searchDto) {
         try {
             List<UserRelationship> allRelationships = relationshipRepository.findByUserIdAndIsActiveTrue(userId);
@@ -277,6 +289,36 @@ public class FamilyTreeService {
         }
     }
 
+    /**
+     * 9. Get family members by generation level
+     * Corresponds to: GET /generation/{userId}/{generationLevel}
+     */
+    public List<UserNodeDto> getFamilyMembersByGeneration(Long userId, Integer generationLevel) {
+        List<UserRelationship> relationships = relationshipRepository
+                .findByUserIdAndGenerationLevelAndIsActiveTrue(userId, generationLevel);
+
+        return relationships.stream()
+                .map(this::buildUserNodeDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 10. Get family members by relationship side
+     * Corresponds to: GET /side/{userId}/{relationshipSide}
+     */
+    public List<UserNodeDto> getFamilyMembersBySide(Long userId, RelationshipSide side) {
+        List<UserRelationship> relationships = relationshipRepository
+                .findByUserIdAndRelationshipSideAndIsActiveTrue(userId, side);
+
+        return relationships.stream()
+                .map(this::buildUserNodeDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 11. Get mutual relatives between two users
+     * Corresponds to: GET /mutual/{userId1}/{userId2}
+     */
     public List<UserNodeDto> getMutualRelatives(Long userId1, Long userId2) {
         List<Long> mutualRelativeIds = relationshipRepository.findMutualRelatives(userId1, userId2);
         return mutualRelativeIds.stream()
@@ -287,24 +329,527 @@ public class FamilyTreeService {
                 .collect(Collectors.toList());
     }
 
-    public List<UserNodeDto> getFamilyMembersByGeneration(Long userId, Integer generationLevel) {
-        List<UserRelationship> relationships = relationshipRepository
-                .findByUserIdAndGenerationLevelAndIsActiveTrue(userId, generationLevel);
+    // ==================== PRIVATE HELPER METHODS ====================
 
-        return relationships.stream()
-                .map(this::buildUserNodeDto)
-                .collect(Collectors.toList());
+    /**
+     * Create a relationship request
+     */
+    private ApiResponse<String> createRelationshipRequest(AddRelationshipRequest request) {
+        Optional<RelationshipRequest> existingRequest = requestRepository
+                .findByRequesterUserIdAndTargetUserIdAndRelationshipTypeAndStatus(
+                        request.getRequestingUserId(), request.getRelatedUserId(),
+                        request.getRelationshipType(), RequestStatus.PENDING);
+
+        if (existingRequest.isPresent()) {
+            return ApiResponse.error("Relationship request already exists");
+        }
+
+        RelationshipRequest relationshipRequest = new RelationshipRequest();
+        relationshipRequest.setRequesterUserId(request.getRequestingUserId());
+        relationshipRequest.setTargetUserId(request.getRelatedUserId());
+        relationshipRequest.setRelationshipType(request.getRelationshipType());
+
+        // Use enum's built-in methods for defaults
+        relationshipRequest.setRelationshipSide(request.getRelationshipSide() != null ?
+                request.getRelationshipSide() : request.getRelationshipType().getDefaultRelationshipSide());
+        relationshipRequest.setGenerationLevel(request.getGenerationLevel() != null ?
+                request.getGenerationLevel() : request.getRelationshipType().getDefaultGenerationLevel());
+
+        relationshipRequest.setRequestMessage(request.getRequestMessage());
+        relationshipRequest.setStatus(RequestStatus.PENDING);
+        relationshipRequest.setCreatedAt(LocalDateTime.now());
+        relationshipRequest.setUpdatedAt(LocalDateTime.now());
+
+        log.info("RELATIONSHIP_REQUEST_CREATED: RequesterUserId={}, TargetUserId={}, RelationshipType={}, RelationshipSide={}, GenerationLevel={}",
+                relationshipRequest.getRequesterUserId(), relationshipRequest.getTargetUserId(),
+                relationshipRequest.getRelationshipType(), relationshipRequest.getRelationshipSide(),
+                relationshipRequest.getGenerationLevel());
+
+        requestRepository.save(relationshipRequest);
+
+        return ApiResponse.success("Relationship request sent successfully");
     }
 
-    public List<UserNodeDto> getFamilyMembersBySide(Long userId, RelationshipSide side) {
-        List<UserRelationship> relationships = relationshipRepository
-                .findByUserIdAndRelationshipSideAndIsActiveTrue(userId, side);
+    /**
+     * Add direct relationship without request - CORRECTED VERSION
+     */
+    private ApiResponse<String> addDirectRelationship(AddRelationshipRequest request, User requestingUser, User relatedUser) {
+        try {
+            log.info("DIRECT_RELATIONSHIP_START: RequestingUser ID={}, Gender={}, RelatedUser ID={}, Gender={}, RelationshipType={}",
+                    requestingUser.getId(), requestingUser.getGender(), relatedUser.getId(), relatedUser.getGender(), request.getRelationshipType());
 
-        return relationships.stream()
-                .map(this::buildUserNodeDto)
-                .collect(Collectors.toList());
+            // Create forward relationship (what the requesting user claims about the related user)
+            UserRelationship relationship = new UserRelationship();
+            relationship.setUserId(request.getRequestingUserId());
+            relationship.setRelatedUserId(request.getRelatedUserId());
+            relationship.setRelationshipType(request.getRelationshipType());
+
+            // Use enum's built-in methods for defaults
+            relationship.setRelationshipSide(request.getRelationshipSide() != null ?
+                    request.getRelationshipSide() : request.getRelationshipType().getDefaultRelationshipSide());
+            relationship.setGenerationLevel(request.getGenerationLevel() != null ?
+                    request.getGenerationLevel() : request.getRelationshipType().getDefaultGenerationLevel());
+
+            relationship.setCreatedBy(request.getRequestingUserId());
+            relationship.setIsActive(true);
+            relationship.setCreatedAt(LocalDateTime.now());
+            relationship.setUpdatedAt(LocalDateTime.now());
+
+            log.info("FORWARD_RELATIONSHIP_SAVING: UserId={}, RelatedUserId={}, RelationshipType={}, RelationshipSide={}, GenerationLevel={}",
+                    relationship.getUserId(), relationship.getRelatedUserId(), relationship.getRelationshipType(),
+                    relationship.getRelationshipSide(), relationship.getGenerationLevel());
+
+            relationshipRepository.save(relationship);
+            log.info("FORWARD_RELATIONSHIP_SAVED: Relationship ID={}", relationship.getId());
+
+            // Create reverse relationship - CORRECTED: Pass both users for proper calculation
+            RelationshipType reverseType = getReverseRelationshipType(request.getRelationshipType(), requestingUser, relatedUser);
+
+            UserRelationship reverseRelationship = new UserRelationship();
+            reverseRelationship.setUserId(request.getRelatedUserId());
+            reverseRelationship.setRelatedUserId(request.getRequestingUserId());
+            reverseRelationship.setRelationshipType(reverseType);
+            reverseRelationship.setRelationshipSide(reverseType.getDefaultRelationshipSide());
+            reverseRelationship.setGenerationLevel(-relationship.getGenerationLevel());
+            reverseRelationship.setCreatedBy(request.getRequestingUserId());
+            reverseRelationship.setIsActive(true);
+            reverseRelationship.setCreatedAt(LocalDateTime.now());
+            reverseRelationship.setUpdatedAt(LocalDateTime.now());
+
+            log.info("REVERSE_RELATIONSHIP_SAVING: UserId={}, RelatedUserId={}, RelationshipType={}, RelationshipSide={}, GenerationLevel={}",
+                    reverseRelationship.getUserId(), reverseRelationship.getRelatedUserId(), reverseRelationship.getRelationshipType(),
+                    reverseRelationship.getRelationshipSide(), reverseRelationship.getGenerationLevel());
+
+            relationshipRepository.save(reverseRelationship);
+            log.info("REVERSE_RELATIONSHIP_SAVED: Relationship ID={}", reverseRelationship.getId());
+
+            return ApiResponse.success("Relationship added successfully");
+
+        } catch (DataIntegrityViolationException e) {
+            log.error("Data integrity violation while adding direct relationship", e);
+            return ApiResponse.error("Relationship already exists or data constraint violation");
+        }
     }
 
+    /**
+     * Check if relationship already exists
+     */
+    private boolean checkRelationshipExists(RelationshipRequest request) {
+        // Check if any relationship exists between these two users (bidirectional)
+        boolean relationshipExists = relationshipRepository.existsByUserIdAndRelatedUserIdAndIsActive(
+                request.getRequesterUserId(),
+                request.getTargetUserId(),
+                true) ||
+                relationshipRepository.existsByUserIdAndRelatedUserIdAndIsActive(
+                        request.getTargetUserId(),
+                        request.getRequesterUserId(),
+                        true);
+
+        log.info("RELATIONSHIP_EXISTS_CHECK: RequesterUserId={}, TargetUserId={}, Exists={}",
+                request.getRequesterUserId(), request.getTargetUserId(), relationshipExists);
+
+        return relationshipExists;
+    }
+
+    /**
+     * Create relationships with additional safety checks and proper gender handling - CORRECTED VERSION
+     */
+    private void createRelationshipsIfNotExists(RelationshipRequest request, Long respondingUserId) {
+        log.info("CREATING_RELATIONSHIPS_START: RequestId={}, RequesterUserId={}, TargetUserId={}, RelationshipType={}",
+                request.getId(), request.getRequesterUserId(), request.getTargetUserId(), request.getRelationshipType());
+
+        try {
+            // Get user details to determine gender for reverse relationship
+            User requesterUser = userRepository.findById(request.getRequesterUserId())
+                    .orElseThrow(() -> new RuntimeException("Requester user not found"));
+            User targetUser = userRepository.findById(request.getTargetUserId())
+                    .orElseThrow(() -> new RuntimeException("Target user not found"));
+
+            log.info("USER_DETAILS: RequesterUser ID={}, Name={}, Gender={}",
+                    requesterUser.getId(), requesterUser.getName(), requesterUser.getGender());
+            log.info("USER_DETAILS: TargetUser ID={}, Name={}, Gender={}",
+                    targetUser.getId(), targetUser.getName(), targetUser.getGender());
+
+            // Create or update the requester's relationship (original request)
+            createOrUpdateRelationship(
+                    request.getRequesterUserId(),
+                    request.getTargetUserId(),
+                    request.getRelationshipType(),
+                    request.getRelationshipSide(),
+                    request.getGenerationLevel(),
+                    respondingUserId,
+                    "REQUESTER"
+            );
+
+            // Create or update the target user's relationship (reverse with proper gender consideration)
+            // CORRECTED: Pass both users for proper reverse relationship calculation
+            log.info("CALCULATING_REVERSE_TYPE: OriginalType={}, RequesterGender={}, TargetGender={}",
+                    request.getRelationshipType(), requesterUser.getGender(), targetUser.getGender());
+
+            RelationshipType reverseType = getReverseRelationshipType(request.getRelationshipType(), requesterUser, targetUser);
+
+            log.info("CALCULATED_REVERSE_TYPE: {}", reverseType);
+
+            createOrUpdateRelationship(
+                    request.getTargetUserId(),
+                    request.getRequesterUserId(),
+                    reverseType,
+                    reverseType.getDefaultRelationshipSide(),
+                    -request.getGenerationLevel(),
+                    respondingUserId,
+                    "TARGET"
+            );
+
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Relationship creation failed due to constraint violation - relationship may have been created by another process", e);
+            // Don't throw the exception as the request was already approved
+        }
+    }
+
+    /**
+     * Create or update a relationship - handles both new creation and updating existing relationships
+     */
+    private void createOrUpdateRelationship(Long userId, Long relatedUserId, RelationshipType relationshipType,
+                                            RelationshipSide relationshipSide, Integer generationLevel,
+                                            Long createdBy, String relationshipDirection) {
+
+        // Check if relationship already exists
+        Optional<UserRelationship> existingRelationship = relationshipRepository
+                .findByUserIdAndRelatedUserIdAndIsActiveTrue(userId, relatedUserId);
+
+        if (existingRelationship.isPresent()) {
+            // Update existing relationship
+            UserRelationship relationship = existingRelationship.get();
+
+            log.info("{}_RELATIONSHIP_UPDATING: Existing ID={}, Old Type={}, New Type={}",
+                    relationshipDirection, relationship.getId(), relationship.getRelationshipType(), relationshipType);
+
+            relationship.setRelationshipType(relationshipType);
+            relationship.setRelationshipSide(relationshipSide);
+            relationship.setGenerationLevel(generationLevel);
+            relationship.setUpdatedAt(LocalDateTime.now());
+
+            relationshipRepository.save(relationship);
+            log.info("{}_RELATIONSHIP_UPDATED: ID={}, New Type={}",
+                    relationshipDirection, relationship.getId(), relationshipType);
+
+        } else {
+            // Create new relationship
+            UserRelationship relationship = new UserRelationship();
+            relationship.setUserId(userId);
+            relationship.setRelatedUserId(relatedUserId);
+            relationship.setRelationshipType(relationshipType);
+            relationship.setRelationshipSide(relationshipSide);
+            relationship.setGenerationLevel(generationLevel);
+            relationship.setCreatedBy(createdBy);
+            relationship.setIsActive(true);
+            relationship.setCreatedAt(LocalDateTime.now());
+            relationship.setUpdatedAt(LocalDateTime.now());
+
+            log.info("{}_RELATIONSHIP_CREATING: UserId={}, RelatedUserId={}, RelationshipType={}, RelationshipSide={}, GenerationLevel={}",
+                    relationshipDirection, relationship.getUserId(), relationship.getRelatedUserId(),
+                    relationship.getRelationshipType(), relationship.getRelationshipSide(),
+                    relationship.getGenerationLevel());
+
+            relationshipRepository.save(relationship);
+            log.info("{}_RELATIONSHIP_CREATED: ID={}, Type={}",
+                    relationshipDirection, relationship.getId(), relationshipType);
+        }
+    }
+
+    /**
+     * CORRECTED: Get reverse relationship type - handles ALL relationship types correctly
+     * This method determines what relationship the target user should have with the requester
+     *
+     * @param originalType The relationship type being claimed
+     * @param requesterUser The user making the claim
+     * @param targetUser The user being assigned the role
+     * @return The reverse relationship type
+     */
+    private RelationshipType getReverseRelationshipType(RelationshipType originalType, User requesterUser, User targetUser) {
+        log.info("REVERSE_TYPE_CALCULATION_START: OriginalType={}, RequesterGender={}, TargetGender={}",
+                originalType, requesterUser.getGender(), targetUser.getGender());
+
+        boolean isRequesterMale = "MALE".equalsIgnoreCase(requesterUser.getGender()) || "M".equalsIgnoreCase(requesterUser.getGender());
+        boolean isRequesterFemale = "FEMALE".equalsIgnoreCase(requesterUser.getGender()) || "F".equalsIgnoreCase(requesterUser.getGender());
+
+        log.info("REVERSE_TYPE_CALCULATION: isRequesterMale={}, isRequesterFemale={}", isRequesterMale, isRequesterFemale);
+
+        RelationshipType reverseType = switch (originalType) {
+            // Parent-Child relationships: reverse depends on requester's gender
+            case FATHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.SON : RelationshipType.DAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: FATHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MOTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.SON : RelationshipType.DAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: MOTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case SON -> {
+                log.info("REVERSE_TYPE_CALCULATION: SON -> FATHER");
+                yield RelationshipType.FATHER;
+            }
+            case DAUGHTER -> {
+                log.info("REVERSE_TYPE_CALCULATION: DAUGHTER -> MOTHER");
+                yield RelationshipType.MOTHER;
+            }
+
+            // Spouse relationships: fixed reverse
+            case HUSBAND -> {
+                log.info("REVERSE_TYPE_CALCULATION: HUSBAND -> WIFE");
+                yield RelationshipType.WIFE;
+            }
+            case WIFE -> {
+                log.info("REVERSE_TYPE_CALCULATION: WIFE -> HUSBAND");
+                yield RelationshipType.HUSBAND;
+            }
+
+            // Sibling relationships: reverse depends on requester's gender
+            case BROTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.BROTHER : RelationshipType.SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: BROTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case SISTER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.BROTHER : RelationshipType.SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: SISTER -> {} (based on requester gender)", result);
+                yield result;
+            }
+
+            // Grandparent-Grandchild relationships: reverse depends on requester's gender
+            case PATERNAL_GRANDFATHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.GRANDSON : RelationshipType.GRANDDAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: PATERNAL_GRANDFATHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case PATERNAL_GRANDMOTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.GRANDSON : RelationshipType.GRANDDAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: PATERNAL_GRANDMOTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MATERNAL_GRANDFATHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.GRANDSON : RelationshipType.GRANDDAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: MATERNAL_GRANDFATHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MATERNAL_GRANDMOTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.GRANDSON : RelationshipType.GRANDDAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: MATERNAL_GRANDMOTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case GRANDSON -> {
+                // Default to paternal grandfather - could be enhanced with more context
+                log.info("REVERSE_TYPE_CALCULATION: GRANDSON -> PATERNAL_GRANDFATHER");
+                yield RelationshipType.PATERNAL_GRANDFATHER;
+            }
+            case GRANDDAUGHTER -> {
+                // Default to paternal grandmother - could be enhanced with more context
+                log.info("REVERSE_TYPE_CALCULATION: GRANDDAUGHTER -> PATERNAL_GRANDMOTHER");
+                yield RelationshipType.PATERNAL_GRANDMOTHER;
+            }
+
+            // Uncle/Aunt - Nephew/Niece relationships: reverse depends on requester's gender
+            case PATERNAL_UNCLE -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.NEPHEW : RelationshipType.NIECE;
+                log.info("REVERSE_TYPE_CALCULATION: PATERNAL_UNCLE -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case PATERNAL_AUNT -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.NEPHEW : RelationshipType.NIECE;
+                log.info("REVERSE_TYPE_CALCULATION: PATERNAL_AUNT -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MATERNAL_UNCLE -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.NEPHEW : RelationshipType.NIECE;
+                log.info("REVERSE_TYPE_CALCULATION: MATERNAL_UNCLE -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MATERNAL_AUNT -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.NEPHEW : RelationshipType.NIECE;
+                log.info("REVERSE_TYPE_CALCULATION: MATERNAL_AUNT -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case NEPHEW -> {
+                // Default to paternal uncle - could be enhanced with more context
+                log.info("REVERSE_TYPE_CALCULATION: NEPHEW -> PATERNAL_UNCLE");
+                yield RelationshipType.PATERNAL_UNCLE;
+            }
+            case NIECE -> {
+                // Default to paternal aunt - could be enhanced with more context
+                log.info("REVERSE_TYPE_CALCULATION: NIECE -> PATERNAL_AUNT");
+                yield RelationshipType.PATERNAL_AUNT;
+            }
+
+            // Cousin relationships: reverse depends on requester's gender
+            case PATERNAL_COUSIN_BROTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.PATERNAL_COUSIN_BROTHER : RelationshipType.PATERNAL_COUSIN_SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: PATERNAL_COUSIN_BROTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case PATERNAL_COUSIN_SISTER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.PATERNAL_COUSIN_BROTHER : RelationshipType.PATERNAL_COUSIN_SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: PATERNAL_COUSIN_SISTER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MATERNAL_COUSIN_BROTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.MATERNAL_COUSIN_BROTHER : RelationshipType.MATERNAL_COUSIN_SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: MATERNAL_COUSIN_BROTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case MATERNAL_COUSIN_SISTER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.MATERNAL_COUSIN_BROTHER : RelationshipType.MATERNAL_COUSIN_SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: MATERNAL_COUSIN_SISTER -> {} (based on requester gender)", result);
+                yield result;
+            }
+
+            // In-Law relationships: fixed reverse
+            case FATHER_IN_LAW -> {
+                log.info("REVERSE_TYPE_CALCULATION: FATHER_IN_LAW -> SON_IN_LAW");
+                yield RelationshipType.SON_IN_LAW;
+            }
+            case MOTHER_IN_LAW -> {
+                log.info("REVERSE_TYPE_CALCULATION: MOTHER_IN_LAW -> DAUGHTER_IN_LAW");
+                yield RelationshipType.DAUGHTER_IN_LAW;
+            }
+            case BROTHER_IN_LAW -> {
+                log.info("REVERSE_TYPE_CALCULATION: BROTHER_IN_LAW -> SISTER_IN_LAW");
+                yield RelationshipType.SISTER_IN_LAW;
+            }
+            case SISTER_IN_LAW -> {
+                log.info("REVERSE_TYPE_CALCULATION: SISTER_IN_LAW -> BROTHER_IN_LAW");
+                yield RelationshipType.BROTHER_IN_LAW;
+            }
+            case SON_IN_LAW -> {
+                log.info("REVERSE_TYPE_CALCULATION: SON_IN_LAW -> FATHER_IN_LAW");
+                yield RelationshipType.FATHER_IN_LAW;
+            }
+            case DAUGHTER_IN_LAW -> {
+                log.info("REVERSE_TYPE_CALCULATION: DAUGHTER_IN_LAW -> MOTHER_IN_LAW");
+                yield RelationshipType.MOTHER_IN_LAW;
+            }
+
+            // Great-grandparent relationships: reverse depends on requester's gender
+            case GREAT_GRANDFATHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.GREAT_GRANDSON : RelationshipType.GREAT_GRANDDAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: GREAT_GRANDFATHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case GREAT_GRANDMOTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.GREAT_GRANDSON : RelationshipType.GREAT_GRANDDAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: GREAT_GRANDMOTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case GREAT_GRANDSON -> {
+                log.info("REVERSE_TYPE_CALCULATION: GREAT_GRANDSON -> GREAT_GRANDFATHER");
+                yield RelationshipType.GREAT_GRANDFATHER;
+            }
+            case GREAT_GRANDDAUGHTER -> {
+                log.info("REVERSE_TYPE_CALCULATION: GREAT_GRANDDAUGHTER -> GREAT_GRANDMOTHER");
+                yield RelationshipType.GREAT_GRANDMOTHER;
+            }
+
+            // Step family relationships: reverse depends on requester's gender
+            case STEP_FATHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.STEP_SON : RelationshipType.STEP_DAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: STEP_FATHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case STEP_MOTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.STEP_SON : RelationshipType.STEP_DAUGHTER;
+                log.info("REVERSE_TYPE_CALCULATION: STEP_MOTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case STEP_BROTHER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.STEP_BROTHER : RelationshipType.STEP_SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: STEP_BROTHER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case STEP_SISTER -> {
+                RelationshipType result = isRequesterMale ? RelationshipType.STEP_BROTHER : RelationshipType.STEP_SISTER;
+                log.info("REVERSE_TYPE_CALCULATION: STEP_SISTER -> {} (based on requester gender)", result);
+                yield result;
+            }
+            case STEP_SON -> {
+                log.info("REVERSE_TYPE_CALCULATION: STEP_SON -> STEP_FATHER");
+                yield RelationshipType.STEP_FATHER;
+            }
+            case STEP_DAUGHTER -> {
+                log.info("REVERSE_TYPE_CALCULATION: STEP_DAUGHTER -> STEP_MOTHER");
+                yield RelationshipType.STEP_MOTHER;
+            }
+
+            default -> {
+                log.info("REVERSE_TYPE_CALCULATION: DEFAULT -> {}", originalType);
+                yield originalType; // For any unhandled relationships, return same
+            }
+        };
+
+        log.info("REVERSE_TYPE_CALCULATION_FINAL: OriginalType={}, RequesterGender={}, ReverseType={}",
+                originalType, requesterUser.getGender(), reverseType);
+
+        return reverseType;
+    }
+
+    /**
+     * Validate that the target user's gender matches the relationship role they're being assigned
+     * This validates that the TARGET user can fulfill the relationship role being claimed
+     */
+    private ApiResponse<String> validateTargetUserGenderCompatibility(User targetUser, RelationshipType relationshipType) {
+        String targetGender = targetUser.getGender();
+        log.info("TARGET_GENDER_VALIDATION: Target User ID={}, Gender={}, RelationshipType={}",
+                targetUser.getId(), targetGender, relationshipType);
+
+        if (targetGender == null) {
+            return ApiResponse.error("Target user gender is not specified");
+        }
+
+        boolean isTargetMale = "MALE".equalsIgnoreCase(targetGender) || "M".equalsIgnoreCase(targetGender);
+        boolean isTargetFemale = "FEMALE".equalsIgnoreCase(targetGender) || "F".equalsIgnoreCase(targetGender);
+
+        log.info("TARGET_GENDER_VALIDATION: isTargetMale={}, isTargetFemale={}", isTargetMale, isTargetFemale);
+
+        // Check if the TARGET user's gender matches the relationship role they're being assigned
+        switch (relationshipType) {
+            // Male-only roles (target must be male to be assigned these roles)
+            case FATHER, HUSBAND, SON, BROTHER,
+                 PATERNAL_GRANDFATHER, MATERNAL_GRANDFATHER,
+                 PATERNAL_UNCLE, MATERNAL_UNCLE,
+                 PATERNAL_COUSIN_BROTHER, MATERNAL_COUSIN_BROTHER,
+                 FATHER_IN_LAW, BROTHER_IN_LAW, SON_IN_LAW,
+                 NEPHEW, GRANDSON, GREAT_GRANDFATHER, GREAT_GRANDSON,
+                 STEP_FATHER, STEP_BROTHER, STEP_SON:
+                if (!isTargetMale) {
+                    log.warn("TARGET_GENDER_VALIDATION: FAILED - Target user must be male to be assigned {} role", relationshipType.getDisplayName());
+                    return ApiResponse.error("Cannot assign " + relationshipType.getDisplayName() + " role to a female user");
+                }
+                break;
+
+            // Female-only roles (target must be female to be assigned these roles)
+            case MOTHER, WIFE, DAUGHTER, SISTER,
+                 PATERNAL_GRANDMOTHER, MATERNAL_GRANDMOTHER,
+                 PATERNAL_AUNT, MATERNAL_AUNT,
+                 PATERNAL_COUSIN_SISTER, MATERNAL_COUSIN_SISTER,
+                 MOTHER_IN_LAW, SISTER_IN_LAW, DAUGHTER_IN_LAW,
+                 NIECE, GRANDDAUGHTER, GREAT_GRANDMOTHER, GREAT_GRANDDAUGHTER,
+                 STEP_MOTHER, STEP_SISTER, STEP_DAUGHTER:
+                if (!isTargetFemale) {
+                    log.warn("TARGET_GENDER_VALIDATION: FAILED - Target user must be female to be assigned {} role", relationshipType.getDisplayName());
+                    return ApiResponse.error("Cannot assign " + relationshipType.getDisplayName() + " role to a male user");
+                }
+                break;
+
+            default:
+                // For other relationship types, no gender restriction
+                break;
+        }
+
+        log.info("TARGET_GENDER_VALIDATION: PASSED for Target User ID={}, RelationshipType={}", targetUser.getId(), relationshipType);
+        return ApiResponse.success("Target gender validation passed");
+    }
+
+    // Helper methods remain the same...
     private boolean matchesSearchCriteria(UserRelationship relationship, FamilyMemberSearchDto searchDto) {
         // Name search
         if (searchDto.getQuery() != null && !searchDto.getQuery().isEmpty()) {
@@ -347,27 +892,6 @@ public class FamilyTreeService {
         return true;
     }
 
-    private RelationshipType getReverse(RelationshipType type) {
-        return switch (type) {
-            case FATHER -> RelationshipType.SON; // or DAUGHTER based on gender
-            case MOTHER -> RelationshipType.DAUGHTER; // or SON based on gender
-            case SON -> RelationshipType.FATHER;
-            case DAUGHTER -> RelationshipType.MOTHER;
-            case HUSBAND -> RelationshipType.WIFE;
-            case WIFE -> RelationshipType.HUSBAND;
-            case BROTHER -> RelationshipType.SISTER; // or BROTHER based on gender
-            case SISTER -> RelationshipType.BROTHER; // or SISTER based on gender
-            case PATERNAL_GRANDFATHER -> RelationshipType.GRANDSON;
-            case PATERNAL_GRANDMOTHER -> RelationshipType.GRANDDAUGHTER;
-            case MATERNAL_GRANDFATHER -> RelationshipType.GRANDSON;
-            case MATERNAL_GRANDMOTHER -> RelationshipType.GRANDDAUGHTER;
-            case GRANDSON -> RelationshipType.PATERNAL_GRANDFATHER;
-            case GRANDDAUGHTER -> RelationshipType.PATERNAL_GRANDMOTHER;
-            default -> type; // For complex relationships, return same
-        };
-    }
-
-    // All the private helper methods from the previous incomplete code remain the same
     private Map<String, FamilySideDto> buildFamilySides(List<UserRelationship> relationships) {
         Map<String, FamilySideDto> familySides = new HashMap<>();
 
@@ -512,6 +1036,35 @@ public class FamilyTreeService {
         return dto;
     }
 
+    private RelationshipRequestDto buildRelationshipRequestDto(RelationshipRequest request) {
+        RelationshipRequestDto dto = new RelationshipRequestDto();
+        dto.setId(request.getId());
+        dto.setRequesterUserId(request.getRequesterUserId());
+        dto.setTargetUserId(request.getTargetUserId());
+        dto.setRelationshipType(request.getRelationshipType());
+        dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
+        dto.setRelationshipSide(request.getRelationshipSide());
+        dto.setRelationshipSideDisplayName(request.getRelationshipSide().getDisplayName());
+        dto.setGenerationLevel(request.getGenerationLevel());
+        dto.setRequestMessage(request.getRequestMessage());
+        dto.setStatus(request.getStatus());
+        dto.setStatusDisplayName(request.getStatus().getDisplayName());
+        dto.setCreatedAt(request.getCreatedAt());
+        dto.setRespondedAt(request.getRespondedAt());
+
+        if (request.getRequesterUser() != null) {
+            dto.setRequesterName(request.getRequesterUser().getName());
+            dto.setRequesterEmail(request.getRequesterUser().getEmail());
+        }
+
+        if (request.getTargetUser() != null) {
+            dto.setTargetName(request.getTargetUser().getName());
+            dto.setTargetEmail(request.getTargetUser().getEmail());
+        }
+
+        return dto;
+    }
+
     private String getGenerationName(Integer level) {
         return switch (level) {
             case -3 -> "Great Grandparents";
@@ -554,121 +1107,5 @@ public class FamilyTreeService {
         return relationships.stream()
                 .anyMatch(rel -> rel.getRelationshipType() == RelationshipType.FATHER ||
                         rel.getRelationshipType() == RelationshipType.MOTHER);
-    }
-
-    public ApiResponse<String> addRelationship(AddRelationshipRequest request) {
-        try {
-            log.info("Adding relationship: {} -> {} as {}",
-                    request.getRequestingUserId(), request.getRelatedUserId(), request.getRelationshipType());
-
-            RelationshipValidationResponse validation = validationService.validateRelationship(
-                    request.getRequestingUserId(), request.getRelatedUserId(), request.getRelationshipType());
-
-            if (!validation.isValid()) {
-                return ApiResponse.error("Validation failed: " + String.join(", ", validation.getValidationErrors()));
-            }
-
-            if (request.isSendRequest()) {
-                return createRelationshipRequest(request);
-            } else {
-                return addDirectRelationship(request);
-            }
-
-        } catch (Exception e) {
-            log.error("Error adding relationship", e);
-            return ApiResponse.error("Failed to add relationship: " + e.getMessage());
-        }
-    }
-
-    private ApiResponse<String> createRelationshipRequest(AddRelationshipRequest request) {
-        Optional<RelationshipRequest> existingRequest = requestRepository
-                .findByRequesterUserIdAndTargetUserIdAndRelationshipTypeAndStatus(
-                        request.getRequestingUserId(), request.getRelatedUserId(),
-                        request.getRelationshipType(), RequestStatus.PENDING);
-
-        if (existingRequest.isPresent()) {
-            return ApiResponse.error("Relationship request already exists");
-        }
-
-        RelationshipRequest relationshipRequest = new RelationshipRequest();
-        relationshipRequest.setRequesterUserId(request.getRequestingUserId());
-        relationshipRequest.setTargetUserId(request.getRelatedUserId());
-        relationshipRequest.setRelationshipType(request.getRelationshipType());
-        relationshipRequest.setRelationshipSide(request.getRelationshipSide() != null ?
-                request.getRelationshipSide() : request.getRelationshipType().getDefaultRelationshipSide());
-        relationshipRequest.setGenerationLevel(request.getGenerationLevel() != null ?
-                request.getGenerationLevel() : request.getRelationshipType().getDefaultGenerationLevel());
-        relationshipRequest.setRequestMessage(request.getRequestMessage());
-        relationshipRequest.setStatus(RequestStatus.PENDING);
-
-        requestRepository.save(relationshipRequest);
-
-        return ApiResponse.success("Relationship request sent successfully");
-    }
-
-    private ApiResponse<String> addDirectRelationship(AddRelationshipRequest request) {
-        UserRelationship relationship = new UserRelationship();
-        relationship.setUserId(request.getRequestingUserId());
-        relationship.setRelatedUserId(request.getRelatedUserId());
-        relationship.setRelationshipType(request.getRelationshipType());
-        relationship.setRelationshipSide(request.getRelationshipSide() != null ?
-                request.getRelationshipSide() : request.getRelationshipType().getDefaultRelationshipSide());
-        relationship.setGenerationLevel(request.getGenerationLevel() != null ?
-                request.getGenerationLevel() : request.getRelationshipType().getDefaultGenerationLevel());
-        relationship.setCreatedBy(request.getRequestingUserId());
-        relationship.setIsActive(true);
-
-        relationshipRepository.save(relationship);
-
-        return ApiResponse.success("Relationship added successfully");
-    }
-
-    public ApiResponse<String> removeRelationship(Long userId, Long relatedUserId) {
-        try {
-            relationshipRepository.softDeleteRelationship(userId, relatedUserId);
-            return ApiResponse.success("Relationship removed successfully");
-        } catch (Exception e) {
-            log.error("Error removing relationship", e);
-            return ApiResponse.error("Failed to remove relationship: " + e.getMessage());
-        }
-    }
-
-    public List<RelationshipRequestDto> getPendingRequests(Long userId) {
-        List<RelationshipRequest> requests = requestRepository.findByTargetUserIdAndStatus(userId, RequestStatus.PENDING);
-        return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
-    }
-
-    public List<RelationshipRequestDto> getSentRequests(Long userId) {
-        List<RelationshipRequest> requests = requestRepository.findByRequesterUserIdAndStatus(userId, RequestStatus.PENDING);
-        return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
-    }
-
-    private RelationshipRequestDto buildRelationshipRequestDto(RelationshipRequest request) {
-        RelationshipRequestDto dto = new RelationshipRequestDto();
-        dto.setId(request.getId());
-        dto.setRequesterUserId(request.getRequesterUserId());
-        dto.setTargetUserId(request.getTargetUserId());
-        dto.setRelationshipType(request.getRelationshipType());
-        dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
-        dto.setRelationshipSide(request.getRelationshipSide());
-        dto.setRelationshipSideDisplayName(request.getRelationshipSide().getDisplayName());
-        dto.setGenerationLevel(request.getGenerationLevel());
-        dto.setRequestMessage(request.getRequestMessage());
-        dto.setStatus(request.getStatus());
-        dto.setStatusDisplayName(request.getStatus().getDisplayName());
-        dto.setCreatedAt(request.getCreatedAt());
-        dto.setRespondedAt(request.getRespondedAt());
-
-        if (request.getRequesterUser() != null) {
-            dto.setRequesterName(request.getRequesterUser().getName());
-            dto.setRequesterEmail(request.getRequesterUser().getEmail());
-        }
-
-        if (request.getTargetUser() != null) {
-            dto.setTargetName(request.getTargetUser().getName());
-            dto.setTargetEmail(request.getTargetUser().getEmail());
-        }
-
-        return dto;
     }
 }

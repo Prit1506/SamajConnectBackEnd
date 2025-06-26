@@ -7,7 +7,11 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "user_relationships")
+@Table(name = "user_relationships",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"user_id", "related_user_id", "relationship_type", "is_active"})
+        }
+)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -58,4 +62,5 @@ public class UserRelationship {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", insertable = false, updatable = false)
     private User createdByUser;
+
 }

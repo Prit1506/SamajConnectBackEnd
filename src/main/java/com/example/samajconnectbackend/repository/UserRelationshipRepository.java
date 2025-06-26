@@ -26,6 +26,7 @@ public interface UserRelationshipRepository extends JpaRepository<UserRelationsh
     Optional<UserRelationship> findByUserIdAndRelatedUserIdAndRelationshipTypeAndIsActiveTrue(
             Long userId, Long relatedUserId, RelationshipType relationshipType);
 
+    boolean existsByUserIdAndRelatedUserIdAndIsActive(Long userId, Long relatedUserId, Boolean isActive);
     // Check if relationship exists (bidirectional)
     @Query("SELECT ur FROM UserRelationship ur WHERE " +
             "((ur.userId = :userId AND ur.relatedUserId = :relatedUserId) OR " +
@@ -120,4 +121,8 @@ public interface UserRelationshipRepository extends JpaRepository<UserRelationsh
             RelationshipType relationshipType,
             Boolean isActive
     );
+
+    Optional<UserRelationship> findByUserIdAndRelatedUserIdAndIsActiveTrue(Long userId, Long relatedUserId);
+
+    List<UserRelationship> findAllByUserIdAndRelatedUserIdAndIsActiveTrue(Long userId, Long relatedUserId);
 }
