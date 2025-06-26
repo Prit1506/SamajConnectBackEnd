@@ -9,12 +9,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService {
@@ -366,5 +371,127 @@ public class UserService {
         }
 
         return userDto;
+    }
+
+    /**
+     * Search samaj members for relationship requests
+     */
+    @Transactional(readOnly = true)
+    public ApiResponse<SamajMemberSearchResponse> searchSamajMembers(Long currentUserId, SamajMemberSearchDto searchDto) {
+        try {
+            // Get current user to validate and get samaj info
+            Optional<User> currentUserOpt = userRepository.findById(currentUserId);
+            if (currentUserOpt.isEmpty()) {
+                return ApiResponse.error("Current user not found");
+            }
+
+            User currentUser = currentUserOpt.get();
+            if (currentUser.getSamaj() == null) {
+                return ApiResponse.error("User is not associated with any samaj");
+            }
+
+            Long samajId = currentUser.getSamaj().getId();
+
+            // Create pageable
+            Pageable pageable = PageRequest.of(searchDto.getPage(), searchDto.getSize());
+
+            // Search users
+            Page<User> userPage;
+            if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
+                userPage = userRepository.findSamajMembersByQuery(samajId, currentUserId, searchDto.getQuery().trim(), pageable);
+            } else {
+                userPage = userRepository.findAllSamajMembers(samajId, currentUserId, pageable);
+            }
+
+            // Convert to DTOs with relationship status
+            List<SamajMemberDto> memberDtos = userPage.getContent().stream()
+                    .map(user -> convertToSamajMemberDto(user, currentUserId))
+                    .collect(Collectors.toList());
+
+            // Build response
+            SamajMemberSearchResponse response = new SamajMemberSearchResponse();
+            response.setMembers(memberDtos);
+            response.setTotalResults(userPage.getTotalElements());
+            response.setCurrentPage(userPage.getNumber());
+            response.setTotalPages(userPage.getTotalPages());
+            response.setHasNext(userPage.hasNext());
+            response.setHasPrevious(userPage.hasPrevious());
+            response.setMessage("Search completed successfully");
+
+            logger.info("Samaj member search completed for user {} in samaj {}. Found {} results",
+                    currentUserId, samajId, userPage.getTotalElements());
+
+            return ApiResponse.success("Samaj members retrieved successfully", response);
+
+        } catch (Exception e) {
+            logger.error("Error searching samaj members for user {}: {}", currentUserId, e.getMessage(), e);
+            return ApiResponse.error("Failed to search samaj members: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Convert User entity to SamajMemberDto with relationship status
+     */
+    private SamajMemberDto convertToSamajMemberDto(User user, Long currentUserId) {
+        SamajMemberDto dto = new SamajMemberDto();
+        dto.setUserId(user.getId());
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setGender(user.getGender());
+        dto.setPhoneNumber(user.getPhoneNumber());
+        dto.setAddress(user.getAddress());
+
+        // Set profile image
+        dto.setProfileImageFromBytes(user.getProfileImg());
+
+        // Determine relationship status
+        SamajMemberDto.RelationshipStatus status = determineRelationshipStatus(currentUserId, user.getId());
+        dto.setRelationshipStatus(status);
+        dto.setRelationshipStatusText(getRelationshipStatusText(status));
+
+        return dto;
+    }
+
+    /**
+     * Determine the relationship status between current user and target user
+     */
+    private SamajMemberDto.RelationshipStatus determineRelationshipStatus(Long currentUserId, Long targetUserId) {
+        try {
+            // Check if they already have a relationship
+            if (userRepository.hasRelationship(currentUserId, targetUserId)) {
+                return SamajMemberDto.RelationshipStatus.ALREADY_RELATED;
+            }
+
+            // Check if current user sent a request to target user
+            if (userRepository.hasSentRequestTo(currentUserId, targetUserId)) {
+                return SamajMemberDto.RelationshipStatus.REQUEST_SENT;
+            }
+
+            // Check if target user sent a request to current user
+            if (userRepository.hasReceivedRequestFrom(currentUserId, targetUserId)) {
+                return SamajMemberDto.RelationshipStatus.REQUEST_RECEIVED;
+            }
+
+            // No relationship or pending requests - available for new request
+            return SamajMemberDto.RelationshipStatus.AVAILABLE;
+
+        } catch (Exception e) {
+            logger.error("Error determining relationship status between users {} and {}: {}",
+                    currentUserId, targetUserId, e.getMessage());
+            return SamajMemberDto.RelationshipStatus.AVAILABLE; // Default to available on error
+        }
+    }
+
+    /**
+     * Get human-readable text for relationship status
+     */
+    private String getRelationshipStatusText(SamajMemberDto.RelationshipStatus status) {
+        return switch (status) {
+            case AVAILABLE -> "Available";
+            case ALREADY_RELATED -> "Already Related";
+            case REQUEST_SENT -> "Request Sent";
+            case REQUEST_RECEIVED -> "Request Received";
+            case SAME_USER -> "You";
+        };
     }
 }

@@ -163,6 +163,8 @@ public class FamilyTreeService {
      */
     public List<RelationshipRequestDto> getPendingRequests(Long userId) {
         List<RelationshipRequest> requests = requestRepository.findByTargetUserIdAndStatus(userId, RequestStatus.PENDING);
+
+
         return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
     }
 

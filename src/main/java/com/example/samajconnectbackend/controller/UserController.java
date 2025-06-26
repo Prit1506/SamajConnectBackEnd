@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/users")
 @CrossOrigin(origins = "*")
@@ -70,6 +72,33 @@ public class UserController {
             UpdateUserProfileResponse errorResponse = new UpdateUserProfileResponse(
                     false,
                     "Failed to update profile: " + e.getMessage()
+            );
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
+
+    /**
+     * Search samaj members for relationship requests
+     */
+    @PostMapping("/{userId}/search-samaj-members")
+    public ResponseEntity<ApiResponse<SamajMemberSearchResponse>> searchSamajMembers(
+            @PathVariable Long userId,
+            @Valid @RequestBody SamajMemberSearchDto searchDto) {
+        try {
+            logger.info("Searching samaj members for user: {} with query: '{}'", userId, searchDto.getQuery());
+
+            ApiResponse<SamajMemberSearchResponse> response = userService.searchSamajMembers(userId, searchDto);
+
+            if (response.isSuccess()) {
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.badRequest().body(response);
+            }
+
+        } catch (Exception e) {
+            logger.error("Error in searchSamajMembers endpoint for user ID {}: {}", userId, e.getMessage());
+            ApiResponse<SamajMemberSearchResponse> errorResponse = ApiResponse.error(
+                    "Failed to search samaj members: " + e.getMessage()
             );
             return ResponseEntity.internalServerError().body(errorResponse);
         }
