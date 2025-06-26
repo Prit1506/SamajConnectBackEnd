@@ -588,12 +588,12 @@ public class FamilyTreeService {
                 yield result;
             }
             case SON -> {
-                log.info("REVERSE_TYPE_CALCULATION: SON -> FATHER");
-                yield RelationshipType.FATHER;
+                log.info("REVERSE_TYPE_CALCULATION: SON -> FATHER || MOTHER");
+                yield isRequesterMale ? RelationshipType.FATHER : RelationshipType.MOTHER;
             }
             case DAUGHTER -> {
-                log.info("REVERSE_TYPE_CALCULATION: DAUGHTER -> MOTHER");
-                yield RelationshipType.MOTHER;
+                log.info("REVERSE_TYPE_CALCULATION: DAUGHTER -> MOTHER || FATHER");
+                yield isRequesterMale ? RelationshipType.FATHER : RelationshipType.MOTHER;
             }
 
             // Spouse relationships: fixed reverse
