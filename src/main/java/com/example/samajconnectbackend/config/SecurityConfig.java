@@ -63,7 +63,11 @@ public class SecurityConfig {
                                 "/api/family-tree/search/**",
                                 "/api/family-tree/requests/respond"
                         ).permitAll()
-
+                        .requestMatchers(
+                                "/api/samaj/{samajId}/members",
+                                "/api/samaj/search-members",
+                                "/api/samaj/{samajId}/stats"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .build();

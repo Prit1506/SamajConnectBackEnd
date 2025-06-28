@@ -494,4 +494,173 @@ public class UserService {
             case SAME_USER -> "You";
         };
     }
+    // Add these methods to your existing UserService class
+
+    /**
+     * Get all members of a specific samaj by samaj ID
+     */
+    @Transactional(readOnly = true)
+    public ApiResponse<SamajMembersResponse> getAllSamajMembers(Long samajId, int page, int size) {
+        try {
+            // Validate if samaj exists
+            Optional<Samaj> samajOptional = samajRepository.findById(samajId);
+            if (samajOptional.isEmpty()) {
+                return ApiResponse.error("Samaj not found");
+            }
+
+            Samaj samaj = samajOptional.get();
+
+            // Create pageable
+            Pageable pageable = PageRequest.of(page, size);
+
+            // Get all members of the samaj
+            Page<User> userPage = userRepository.findAllMembersBySamajId(samajId, pageable);
+
+            // Convert to detailed DTOs
+            List<DetailedUserDto> memberDtos = userPage.getContent().stream()
+                    .map(this::convertToDetailedUserDto)
+                    .collect(Collectors.toList());
+
+            // Build response
+            SamajMembersResponse response = new SamajMembersResponse();
+            response.setMembers(memberDtos);
+            response.setTotalMembers(userPage.getTotalElements());
+            response.setCurrentPage(userPage.getNumber());
+            response.setTotalPages(userPage.getTotalPages());
+            response.setHasNext(userPage.hasNext());
+            response.setHasPrevious(userPage.hasPrevious());
+            response.setSamajId(samajId);
+            response.setSamajName(samaj.getName());
+            response.setMessage("Members retrieved successfully");
+
+            logger.info("Retrieved {} members for samaj {} (page {}/{})",
+                    memberDtos.size(), samajId, page + 1, userPage.getTotalPages());
+
+            return ApiResponse.success("Samaj members retrieved successfully", response);
+
+        } catch (Exception e) {
+            logger.error("Error retrieving samaj members for samaj {}: {}", samajId, e.getMessage(), e);
+            return ApiResponse.error("Failed to retrieve samaj members: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Search members of a specific samaj by samaj ID
+     */
+    @Transactional(readOnly = true)
+    public ApiResponse<SamajMembersResponse> searchSamajMembersBySamajId(SamajMemberSearchByIdDto searchDto) {
+        try {
+            // Validate if samaj exists
+            Optional<Samaj> samajOptional = samajRepository.findById(searchDto.getSamajId());
+            if (samajOptional.isEmpty()) {
+                return ApiResponse.error("Samaj not found");
+            }
+
+            Samaj samaj = samajOptional.get();
+
+            // Create pageable
+            Pageable pageable = PageRequest.of(searchDto.getPage(), searchDto.getSize());
+
+            // Search members
+            Page<User> userPage;
+            if (searchDto.getQuery() != null && !searchDto.getQuery().trim().isEmpty()) {
+                userPage = userRepository.findSamajMembersBySamajIdAndQuery(
+                        searchDto.getSamajId(),
+                        searchDto.getQuery().trim(),
+                        pageable
+                );
+            } else {
+                userPage = userRepository.findAllMembersBySamajId(searchDto.getSamajId(), pageable);
+            }
+
+            // Convert to detailed DTOs
+            List<DetailedUserDto> memberDtos = userPage.getContent().stream()
+                    .map(this::convertToDetailedUserDto)
+                    .collect(Collectors.toList());
+
+            // Build response
+            SamajMembersResponse response = new SamajMembersResponse();
+            response.setMembers(memberDtos);
+            response.setTotalMembers(userPage.getTotalElements());
+            response.setCurrentPage(userPage.getNumber());
+            response.setTotalPages(userPage.getTotalPages());
+            response.setHasNext(userPage.hasNext());
+            response.setHasPrevious(userPage.hasPrevious());
+            response.setSamajId(searchDto.getSamajId());
+            response.setSamajName(samaj.getName());
+            response.setMessage("Search completed successfully");
+
+            logger.info("Search completed for samaj {} with query '{}'. Found {} results",
+                    searchDto.getSamajId(), searchDto.getQuery(), userPage.getTotalElements());
+
+            return ApiResponse.success("Search completed successfully", response);
+
+        } catch (Exception e) {
+            logger.error("Error searching samaj members for samaj {}: {}",
+                    searchDto.getSamajId(), e.getMessage(), e);
+            return ApiResponse.error("Failed to search samaj members: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Get basic samaj statistics
+     */
+    @Transactional(readOnly = true)
+    public ApiResponse<SamajStatsDto> getSamajStatistics(Long samajId) {
+        try {
+            // Validate if samaj exists
+            Optional<Samaj> samajOptional = samajRepository.findById(samajId);
+            if (samajOptional.isEmpty()) {
+                return ApiResponse.error("Samaj not found");
+            }
+
+            Samaj samaj = samajOptional.get();
+
+            // Get member count
+            long totalMembers = userRepository.countMembersBySamajId(samajId);
+
+            // Build stats
+            SamajStatsDto stats = new SamajStatsDto();
+            stats.setSamajId(samajId);
+            stats.setSamajName(samaj.getName());
+            stats.setTotalMembers(totalMembers);
+            stats.setDescription(samaj.getDescription());
+
+            return ApiResponse.success("Statistics retrieved successfully", stats);
+
+        } catch (Exception e) {
+            logger.error("Error retrieving samaj statistics for samaj {}: {}", samajId, e.getMessage(), e);
+            return ApiResponse.error("Failed to retrieve statistics: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper method to convert User entity to DetailedUserDto
+     */
+    private DetailedUserDto convertToDetailedUserDto(User user) {
+        DetailedUserDto dto = new DetailedUserDto();
+        dto.setId(user.getId());
+        dto.setName(user.getName());
+        dto.setEmail(user.getEmail());
+        dto.setGender(user.getGender());
+        dto.setPhoneNumber(user.getPhoneNumber());
+        dto.setAddress(user.getAddress());
+        dto.setIsAdmin(user.getIsAdmin());
+        dto.setCreatedAt(user.getCreatedAt());
+        dto.setUpdatedAt(user.getUpdatedAt());
+
+        // Set profile image
+        dto.setProfileImageFromBytes(user.getProfileImg());
+
+        // Add samaj information
+        if (user.getSamaj() != null) {
+            SamajDto samajDto = new SamajDto();
+            samajDto.setId(user.getSamaj().getId());
+            samajDto.setName(user.getSamaj().getName());
+            samajDto.setDescription(user.getSamaj().getDescription());
+            dto.setSamaj(samajDto);
+        }
+
+        return dto;
+    }
 }

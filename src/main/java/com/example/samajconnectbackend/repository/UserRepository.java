@@ -20,7 +20,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     @Query("SELECT u FROM User u WHERE u.samaj.id = :samajId AND u.id != :currentUserId " +
             "AND (LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) " +
-            "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')))")
+            "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "OR LOWER(u.phoneNumber) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "OR LOWER(u.address) LIKE LOWER(CONCAT('%', :query, '%')))")
     Page<User> findSamajMembersByQuery(@Param("samajId") Long samajId,
                                        @Param("currentUserId") Long currentUserId,
                                        @Param("query") String query,
@@ -33,6 +35,36 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Page<User> findAllSamajMembers(@Param("samajId") Long samajId,
                                    @Param("currentUserId") Long currentUserId,
                                    Pageable pageable);
+
+    /**
+     * Search users from a specific samaj by samaj ID (for external samaj search)
+     */
+    @Query("SELECT u FROM User u WHERE u.samaj.id = :samajId " +
+            "AND (LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "OR LOWER(u.phoneNumber) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "OR LOWER(u.address) LIKE LOWER(CONCAT('%', :query, '%')))")
+    Page<User> findSamajMembersBySamajIdAndQuery(@Param("samajId") Long samajId,
+                                                 @Param("query") String query,
+                                                 Pageable pageable);
+
+    /**
+     * Get all users from a specific samaj by samaj ID
+     */
+    @Query("SELECT u FROM User u WHERE u.samaj.id = :samajId")
+    Page<User> findAllMembersBySamajId(@Param("samajId") Long samajId, Pageable pageable);
+
+    /**
+     * Get all users from a specific samaj by samaj ID (List version)
+     */
+    @Query("SELECT u FROM User u WHERE u.samaj.id = :samajId ORDER BY u.name ASC")
+    List<User> findAllMembersBySamajIdList(@Param("samajId") Long samajId);
+
+    /**
+     * Count total members in a samaj
+     */
+    @Query("SELECT COUNT(u) FROM User u WHERE u.samaj.id = :samajId")
+    long countMembersBySamajId(@Param("samajId") Long samajId);
 
     /**
      * Check if two users have any relationship
