@@ -32,4 +32,5 @@ public class RelationshipRequestDto {
     private LocalDateTime createdAt;
     private LocalDateTime respondedAt;
     private boolean isIncoming; // true if current user is target
+
 }

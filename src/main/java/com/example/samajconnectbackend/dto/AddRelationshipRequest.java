@@ -26,5 +26,13 @@ public class AddRelationshipRequest {
     @NotNull(message = "Requesting user ID is required")
     private Long requestingUserId;
 
-    private boolean sendRequest; // If true, send request instead of direct add
+    // REMOVED: sendRequest field - all requests now go through approval process
+
+    // NEW FIELDS FOR LINEAGE CONTEXT
+    private String lineageContext; // "PATERNAL" or "MATERNAL" - helps determine correct reverse relationship
+    private Long intermediateRelativeId; // ID of the connecting relative (e.g., parent for grandparent relationships)
+    private String relationshipPath; // Description of relationship path for complex relationships
+
+    // REMOVED: Admin override functionality - all relationships require approval
+    // private boolean adminOverride = false;
 }
