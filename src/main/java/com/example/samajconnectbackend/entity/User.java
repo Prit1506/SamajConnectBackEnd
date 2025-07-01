@@ -83,6 +83,11 @@ public class User {
         createdAt = LocalDateTime.now();
     }
 
+    @Override
+    public String toString() {
+        return "User{}";
+    }
+
     public boolean isEmailVerified() {
         return emailVerified != null && emailVerified;
     }

@@ -16,6 +16,10 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Samaj {
+    @Override
+    public String toString() {
+        return "-";
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
