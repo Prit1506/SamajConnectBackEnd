@@ -29,6 +29,9 @@ public class RelationshipValidationService {
         List<UserNodeDto> conflictingRelationships = new ArrayList<>();
 
         try {
+            log.info("VALIDATION_START: UserId={}, RelatedUserId={}, RelationshipType={}",
+                    userId, relatedUserId, relationshipType);
+
             // Basic validations
             if (userId.equals(relatedUserId)) {
                 errors.add("Cannot create relationship with yourself");
@@ -65,9 +68,9 @@ public class RelationshipValidationService {
             // Validate relationship logic
             validateRelationshipLogic(userId, relatedUserId, relationshipType, errors, warnings);
 
-            // Check for circular relationships
-            if (wouldCreateCircularRelationship(userId, relatedUserId, relationshipType)) {
-                errors.add("This relationship would create a circular family tree");
+            // FIXED: More intelligent circular relationship check
+            if (wouldCreateProblematicCycle(userId, relatedUserId, relationshipType)) {
+                errors.add("This relationship would create an invalid family structure");
             }
 
             // Validate spouse relationships
@@ -86,6 +89,9 @@ public class RelationshipValidationService {
             } else if (!warnings.isEmpty()) {
                 response.setSuggestion("This relationship can be created but please review the warnings");
             }
+
+            log.info("VALIDATION_RESULT: Valid={}, Errors={}, Warnings={}",
+                    response.isValid(), errors.size(), warnings.size());
 
         } catch (Exception e) {
             log.error("Error validating relationship", e);
@@ -191,49 +197,137 @@ public class RelationshipValidationService {
     private void validateExtendedFamilyLogic(Long userId, Long relatedUserId, RelationshipType relationshipType,
                                              List<UserRelationship> userRelationships, List<String> errors, List<String> warnings) {
         // Additional logic for extended family relationships can be added here
-        // For now, just basic validation
         log.debug("Validating extended family relationship: {}", relationshipType);
     }
 
-    private boolean wouldCreateCircularRelationship(Long userId, Long relatedUserId, RelationshipType relationshipType) {
+    /**
+     * FIXED: More intelligent cycle detection that understands family tree semantics
+     * Only flags truly problematic cycles, not natural family hierarchies
+     */
+    private boolean wouldCreateProblematicCycle(Long userId, Long relatedUserId, RelationshipType relationshipType) {
         try {
-            // Use BFS to detect if adding this relationship would create a cycle
-            Set<Long> visited = new HashSet<>();
-            Queue<Long> queue = new LinkedList<>();
+            log.info("CYCLE_CHECK_START: UserId={}, RelatedUserId={}, RelationshipType={}",
+                    userId, relatedUserId, relationshipType);
 
-            queue.offer(relatedUserId);
-            visited.add(relatedUserId);
+            // Check for direct contradictory relationships only
+            List<UserRelationship> existingRelationships = relationshipRepository
+                    .findExistingRelationship(userId, relatedUserId);
 
-            while (!queue.isEmpty()) {
-                Long currentUserId = queue.poll();
+            for (UserRelationship existing : existingRelationships) {
+                if (isContradictoryRelationship(existing.getRelationshipType(), relationshipType)) {
+                    log.warn("CONTRADICTORY_RELATIONSHIP: Existing={}, New={}",
+                            existing.getRelationshipType(), relationshipType);
+                    return true;
+                }
+            }
 
-                if (currentUserId.equals(userId)) {
-                    return true; // Cycle detected
+            // Check for impossible generational conflicts
+            if (hasGenerationalConflict(userId, relatedUserId, relationshipType)) {
+                log.warn("GENERATIONAL_CONFLICT detected");
+                return true;
+            }
+
+            // Check for impossible parent-child cycles (A parent of B, B parent of A)
+            if (hasDirectParentChildCycle(userId, relatedUserId, relationshipType)) {
+                log.warn("DIRECT_PARENT_CHILD_CYCLE detected");
+                return true;
+            }
+
+            log.info("CYCLE_CHECK_PASSED: No problematic cycles detected");
+            return false;
+
+        } catch (Exception e) {
+            log.error("Error checking for problematic cycles", e);
+            return false; // Assume no cycle if check fails
+        }
+    }
+
+    /**
+     * Check if two relationship types are contradictory
+     */
+    private boolean isContradictoryRelationship(RelationshipType existing, RelationshipType newType) {
+        // Same relationship type is not contradictory (might be updating)
+        if (existing == newType) {
+            return false;
+        }
+
+        // Check for direct contradictions
+        Map<RelationshipType, Set<RelationshipType>> contradictions = Map.of(
+                RelationshipType.FATHER, Set.of(RelationshipType.MOTHER, RelationshipType.SON, RelationshipType.DAUGHTER),
+                RelationshipType.MOTHER, Set.of(RelationshipType.FATHER, RelationshipType.SON, RelationshipType.DAUGHTER),
+                RelationshipType.SON, Set.of(RelationshipType.FATHER, RelationshipType.MOTHER, RelationshipType.DAUGHTER),
+                RelationshipType.DAUGHTER, Set.of(RelationshipType.FATHER, RelationshipType.MOTHER, RelationshipType.SON),
+                RelationshipType.HUSBAND, Set.of(RelationshipType.WIFE, RelationshipType.FATHER, RelationshipType.MOTHER),
+                RelationshipType.WIFE, Set.of(RelationshipType.HUSBAND, RelationshipType.FATHER, RelationshipType.MOTHER)
+        );
+
+        return contradictions.getOrDefault(existing, Collections.emptySet()).contains(newType);
+    }
+
+    /**
+     * Check for impossible generational conflicts
+     */
+    private boolean hasGenerationalConflict(Long userId, Long relatedUserId, RelationshipType relationshipType) {
+        try {
+            // Get existing relationships to check generation levels
+            List<UserRelationship> userRelationships = relationshipRepository.findByUserIdAndIsActiveTrue(userId);
+            List<UserRelationship> relatedUserRelationships = relationshipRepository.findByUserIdAndIsActiveTrue(relatedUserId);
+
+            int newGenerationLevel = relationshipType.getDefaultGenerationLevel();
+
+            // Check if this would create impossible generation conflicts
+            for (UserRelationship rel : userRelationships) {
+                if (rel.getRelatedUserId().equals(relatedUserId)) {
+                    continue; // Skip existing relationship with same user
                 }
 
-                List<UserRelationship> relationships = relationshipRepository.findByUserIdAndIsActiveTrue(currentUserId);
+                // Check for generation level conflicts through common relatives
+                for (UserRelationship relatedRel : relatedUserRelationships) {
+                    if (relatedRel.getRelatedUserId().equals(rel.getRelatedUserId())) {
+                        // Common relative found - check generation consistency
+                        int existingGenLevel = rel.getGenerationLevel();
+                        int relatedGenLevel = relatedRel.getGenerationLevel();
 
-                for (UserRelationship rel : relationships) {
-                    Long nextUserId = rel.getRelatedUserId();
-                    if (!visited.contains(nextUserId)) {
-                        visited.add(nextUserId);
-                        queue.offer(nextUserId);
+                        // Calculate expected generation level
+                        int expectedLevel = existingGenLevel - relatedGenLevel;
+
+                        // Allow some tolerance for complex family structures
+                        if (Math.abs(expectedLevel - newGenerationLevel) > 2) {
+                            log.warn("GENERATION_CONFLICT: Expected={}, Actual={}", expectedLevel, newGenerationLevel);
+                            return true;
+                        }
                     }
-                }
-
-                // Limit search depth to prevent infinite loops
-                if (visited.size() > 1000) {
-                    log.warn("Circular relationship check exceeded depth limit");
-                    break;
                 }
             }
 
             return false;
-
         } catch (Exception e) {
-            log.error("Error checking for circular relationships", e);
-            return false; // Assume no cycle if check fails
+            log.error("Error checking generational conflicts", e);
+            return false;
         }
+    }
+
+    /**
+     * Check for direct parent-child cycles (A parent of B AND B parent of A)
+     */
+    private boolean hasDirectParentChildCycle(Long userId, Long relatedUserId, RelationshipType relationshipType) {
+        // Check if we're trying to create a parent relationship
+        if (!isParentRelationship(relationshipType)) {
+            return false;
+        }
+
+        // Check if the related user is already a parent of the user
+        List<UserRelationship> relatedUserRelationships = relationshipRepository.findByUserIdAndIsActiveTrue(relatedUserId);
+
+        return relatedUserRelationships.stream()
+                .anyMatch(rel -> rel.getRelatedUserId().equals(userId) && isParentRelationship(rel.getRelationshipType()));
+    }
+
+    /**
+     * Check if a relationship type is a parent relationship
+     */
+    private boolean isParentRelationship(RelationshipType type) {
+        return type == RelationshipType.FATHER || type == RelationshipType.MOTHER;
     }
 
     private void validateSpouseRelationships(Long userId, Long relatedUserId, RelationshipType relationshipType,
