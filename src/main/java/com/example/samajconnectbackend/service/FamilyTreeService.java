@@ -157,12 +157,12 @@ public class FamilyTreeService {
     }
 
     /**
-     * 5. Get pending relationship requests for a user
+     * 5. Get pending relationship requests for a user - MODIFIED: Shows reverse relationship display name
      * Corresponds to: GET /requests/pending/{userId}
      */
     public List<RelationshipRequestDto> getPendingRequests(Long userId) {
         List<RelationshipRequest> requests = requestRepository.findByTargetUserIdAndStatus(userId, RequestStatus.PENDING);
-        return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
+        return requests.stream().map(request -> buildRelationshipRequestDto(request, true)).collect(Collectors.toList());
     }
 
     /**
@@ -171,7 +171,7 @@ public class FamilyTreeService {
      */
     public List<RelationshipRequestDto> getSentRequests(Long userId) {
         List<RelationshipRequest> requests = requestRepository.findByRequesterUserIdAndStatus(userId, RequestStatus.PENDING);
-        return requests.stream().map(this::buildRelationshipRequestDto).collect(Collectors.toList());
+        return requests.stream().map(request -> buildRelationshipRequestDto(request, false)).collect(Collectors.toList());
     }
 
     /**
@@ -398,11 +398,6 @@ public class FamilyTreeService {
     }
 
     /**
-     * CORRECTED: Only for admin override - direct relationship addition
-     */
-
-
-    /**
      * CORRECTED: Create relationships after request approval
      */
     private void createRelationshipsAfterApproval(RelationshipRequest request, Long respondingUserId) {
@@ -535,8 +530,6 @@ public class FamilyTreeService {
 
         return relationshipExists;
     }
-
-
 
     /**
      * ENHANCED: Get reverse relationship type with context - SOLVES THE MAIN ISSUE
@@ -1212,13 +1205,18 @@ public class FamilyTreeService {
         return dto;
     }
 
-    private RelationshipRequestDto buildRelationshipRequestDto(RelationshipRequest request) {
+    /**
+     * MODIFIED: Build relationship request DTO with option to show reverse relationship
+     * @param request The relationship request
+     * @param showReverseRelationship If true, shows what relationship the target user would have with the requester
+     * @return RelationshipRequestDto with appropriate relationship display name
+     */
+    private RelationshipRequestDto buildRelationshipRequestDto(RelationshipRequest request, boolean showReverseRelationship) {
         RelationshipRequestDto dto = new RelationshipRequestDto();
         dto.setId(request.getId());
         dto.setRequesterUserId(request.getRequesterUserId());
         dto.setTargetUserId(request.getTargetUserId());
         dto.setRelationshipType(request.getRelationshipType());
-        dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
         dto.setRelationshipSide(request.getRelationshipSide());
         dto.setRelationshipSideDisplayName(request.getRelationshipSide().getDisplayName());
         dto.setGenerationLevel(request.getGenerationLevel());
@@ -1238,7 +1236,47 @@ public class FamilyTreeService {
             dto.setTargetEmail(request.getTargetUser().getEmail());
         }
 
+        // MODIFIED: Set relationship display name based on perspective
+        if (showReverseRelationship) {
+            // For pending requests, show what relationship the target user would have with the requester
+            try {
+                User requesterUser = userRepository.findById(request.getRequesterUserId())
+                        .orElse(null);
+                User targetUser = userRepository.findById(request.getTargetUserId())
+                        .orElse(null);
+
+                if (requesterUser != null && targetUser != null) {
+                    RelationshipContext context = buildRelationshipContextFromRequest(request, requesterUser, targetUser);
+                    RelationshipType reverseType = getReverseRelationshipTypeEnhanced(
+                            request.getRelationshipType(), requesterUser, targetUser, context);
+
+                    dto.setRelationshipDisplayName(reverseType.getDisplayName());
+
+                    log.info("PENDING_REQUEST_DTO: Showing reverse relationship - Original: {}, Reverse: {}",
+                            request.getRelationshipType().getDisplayName(), reverseType.getDisplayName());
+                } else {
+                    // Fallback to original if users not found
+                    dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
+                    log.warn("PENDING_REQUEST_DTO: Could not find users for reverse calculation, using original relationship");
+                }
+            } catch (Exception e) {
+                // Fallback to original relationship display name if reverse calculation fails
+                dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
+                log.error("PENDING_REQUEST_DTO: Error calculating reverse relationship, using original", e);
+            }
+        } else {
+            // For sent requests, show the original relationship display name
+            dto.setRelationshipDisplayName(request.getRelationshipType().getDisplayName());
+        }
+
         return dto;
+    }
+
+    /**
+     * OVERLOADED: Build relationship request DTO with default behavior (no reverse)
+     */
+    private RelationshipRequestDto buildRelationshipRequestDto(RelationshipRequest request) {
+        return buildRelationshipRequestDto(request, false);
     }
 
     private String getGenerationName(Integer level) {
