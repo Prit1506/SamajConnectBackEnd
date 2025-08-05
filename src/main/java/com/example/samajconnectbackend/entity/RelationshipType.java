@@ -52,7 +52,6 @@ public enum RelationshipType {
     STEP_SISTER("Step Sister", "STEP_FAMILY", 0),
     STEP_SON("Step Son", "STEP_FAMILY", 1),
     STEP_DAUGHTER("Step Daughter", "STEP_FAMILY", 1);
-
     private final String displayName;
     private final String defaultSide;
     private final int defaultGenerationLevel;
